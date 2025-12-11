@@ -14,7 +14,7 @@ export function useForexData(timeframe: Timeframe = '1h') {
 
     try {
       const { data: result, error: fnError } = await supabase.functions.invoke('fetch-forex-data', {
-        body: { timeframe, outputsize: 100 },
+        body: { timeframe, outputsize: 300 },
       });
 
       if (fnError) throw fnError;

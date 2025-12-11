@@ -16,7 +16,7 @@ export function usePrediction() {
     setError(null);
 
     try {
-      const currentPrice = candles[0]?.close;
+      const currentPrice = candles[candles.length - 1]?.close;
       const { data: result, error: fnError } = await supabase.functions.invoke('generate-prediction', {
         body: { candles, currentPrice, timeframe, sentimentScore },
       });
