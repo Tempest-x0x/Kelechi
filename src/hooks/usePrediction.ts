@@ -1,19 +1,24 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Prediction, Candle } from '@/types/trading';
+import { Prediction, Candle, Timeframe } from '@/types/trading';
 
 export function usePrediction() {
   const [prediction, setPrediction] = useState<Prediction | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const generatePrediction = useCallback(async (candles: Candle[], currentPrice: number) => {
+  const generatePrediction = useCallback(async (
+    candles: Candle[], 
+    timeframe: Timeframe,
+    sentimentScore: number | null
+  ) => {
     setIsLoading(true);
     setError(null);
 
     try {
+      const currentPrice = candles[0]?.close;
       const { data: result, error: fnError } = await supabase.functions.invoke('generate-prediction', {
-        body: { candles, currentPrice },
+        body: { candles, currentPrice, timeframe, sentimentScore },
       });
 
       if (fnError) throw fnError;

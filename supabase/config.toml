@@ -1,1 +1,10 @@
 project_id = "vidgzprafrmukuxufpfz"
+
+[functions.fetch-forex-data]
+verify_jwt = false
+
+[functions.generate-prediction]
+verify_jwt = false
+
+[functions.fetch-news-sentiment]
+verify_jwt = false

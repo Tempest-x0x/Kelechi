@@ -7,10 +7,16 @@ import { formatDistanceToNow } from 'date-fns';
 interface SignalCardProps {
   prediction: Prediction | null;
   isLoading?: boolean;
-  currentPrice?: number;
+  currentPrice?: number | null;
+  onGenerateSignal?: () => void;
 }
 
-export const SignalCard = memo(function SignalCard({ prediction, isLoading, currentPrice }: SignalCardProps) {
+export const SignalCard = memo(function SignalCard({ 
+  prediction, 
+  isLoading, 
+  currentPrice,
+  onGenerateSignal 
+}: SignalCardProps) {
   if (isLoading) {
     return (
       <div className="trading-card p-6">
@@ -32,7 +38,15 @@ export const SignalCard = memo(function SignalCard({ prediction, isLoading, curr
         <div className="text-center py-8">
           <Zap className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
           <p className="text-muted-foreground">No signal generated yet</p>
-          <p className="text-sm text-muted-foreground mt-1">Click "Generate AI Signal" to analyze the market</p>
+          <p className="text-sm text-muted-foreground mt-1">Analyze the market with AI</p>
+          {onGenerateSignal && (
+            <button
+              onClick={onGenerateSignal}
+              className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors"
+            >
+              Generate AI Signal
+            </button>
+          )}
         </div>
       </div>
     );
