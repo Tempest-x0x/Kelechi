@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { timeframe = "1h", outputsize = 100 } = await req.json();
+    const { timeframe = "1h", outputsize = 300 } = await req.json();
     
     const TWELVE_DATA_API_KEY = Deno.env.get("TWELVE_DATA_API_KEY");
     if (!TWELVE_DATA_API_KEY) {
@@ -21,8 +21,16 @@ serve(async (req) => {
 
     console.log(`Fetching EUR/USD data with timeframe: ${timeframe}, outputsize: ${outputsize}`);
 
-    // Fetch time series data from Twelve Data
-    const url = `https://api.twelvedata.com/time_series?symbol=EUR/USD&interval=${timeframe}&outputsize=${outputsize}&apikey=${TWELVE_DATA_API_KEY}`;
+    // Map timeframe to Twelve Data interval format
+    const intervalMap: Record<string, string> = {
+      '15m': '15min',
+      '1h': '1h',
+      '4h': '4h',
+      '1d': '1day'
+    };
+    const interval = intervalMap[timeframe] || '1h';
+
+    const url = `https://api.twelvedata.com/time_series?symbol=EUR/USD&interval=${interval}&outputsize=${outputsize}&apikey=${TWELVE_DATA_API_KEY}`;
     
     const response = await fetch(url);
     const data = await response.json();
@@ -57,8 +65,15 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Upsert price history (last 50 candles)
-    const priceHistoryData = candles.slice(-50).map((candle: any) => ({
+    // Delete old entries for this timeframe and insert fresh data
+    await supabase
+      .from("price_history")
+      .delete()
+      .eq("symbol", "EUR/USD")
+      .eq("timeframe", timeframe);
+
+    // Store last 100 candles in price_history
+    const priceHistoryData = candles.slice(-100).map((candle: any) => ({
       symbol: "EUR/USD",
       timestamp: candle.timestamp,
       open: candle.open,
@@ -69,12 +84,12 @@ serve(async (req) => {
       timeframe: timeframe,
     }));
 
-    const { error: upsertError } = await supabase
+    const { error: insertError } = await supabase
       .from("price_history")
-      .upsert(priceHistoryData, { onConflict: "symbol,timestamp,timeframe" });
+      .insert(priceHistoryData);
 
-    if (upsertError) {
-      console.error("Error caching price data:", upsertError);
+    if (insertError) {
+      console.error("Error caching price data:", insertError);
     }
 
     return new Response(
@@ -83,6 +98,7 @@ serve(async (req) => {
         symbol: "EUR/USD",
         currentPrice,
         candles,
+        candleCount: candles.length,
         meta: data.meta,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -21,8 +21,12 @@ interface TechnicalIndicators {
   ema9: number;
   ema21: number;
   ema50: number;
+  ema200: number;
   bollingerBands: { upper: number; middle: number; lower: number };
   stochastic: { k: number; d: number };
+  atr: number;
+  supportLevels: number[];
+  resistanceLevels: number[];
 }
 
 // Calculate RSI
@@ -48,7 +52,7 @@ function calculateRSI(closes: number[], period = 14): number {
 
 // Calculate EMA
 function calculateEMA(data: number[], period: number): number {
-  if (data.length < period) return data[data.length - 1];
+  if (data.length < period) return data[data.length - 1] || 0;
   
   const multiplier = 2 / (period + 1);
   let ema = data.slice(0, period).reduce((a, b) => a + b, 0) / period;
@@ -60,17 +64,27 @@ function calculateEMA(data: number[], period: number): number {
   return ema;
 }
 
-// Calculate MACD
+// Calculate MACD with proper signal line
 function calculateMACD(closes: number[]): { value: number; signal: number; histogram: number } {
   const ema12 = calculateEMA(closes, 12);
   const ema26 = calculateEMA(closes, 26);
   const macdLine = ema12 - ema26;
   
-  // For signal line, we need MACD history - simplified here
-  const signalLine = macdLine * 0.9; // Simplified
-  const histogram = macdLine - signalLine;
+  // Calculate MACD history for signal line
+  const macdHistory: number[] = [];
+  for (let i = 26; i < closes.length; i++) {
+    const shortEma = calculateEMA(closes.slice(0, i + 1), 12);
+    const longEma = calculateEMA(closes.slice(0, i + 1), 26);
+    macdHistory.push(shortEma - longEma);
+  }
   
-  return { value: macdLine, signal: signalLine, histogram };
+  const signalLine = macdHistory.length >= 9 ? calculateEMA(macdHistory, 9) : macdLine;
+  
+  return {
+    value: macdLine,
+    signal: signalLine,
+    histogram: macdLine - signalLine
+  };
 }
 
 // Calculate Bollinger Bands
@@ -92,7 +106,7 @@ function calculateBollingerBands(closes: number[], period = 20): { upper: number
   };
 }
 
-// Calculate Stochastic
+// Calculate Stochastic with proper %D
 function calculateStochastic(highs: number[], lows: number[], closes: number[], period = 14): { k: number; d: number } {
   if (closes.length < period) return { k: 50, d: 50 };
   
@@ -106,75 +120,185 @@ function calculateStochastic(highs: number[], lows: number[], closes: number[], 
   if (highestHigh === lowestLow) return { k: 50, d: 50 };
   
   const k = ((currentClose - lowestLow) / (highestHigh - lowestLow)) * 100;
-  const d = k * 0.8; // Simplified - should be 3-period SMA of %K
+  
+  // Calculate %D (3-period SMA of %K)
+  const kValues: number[] = [];
+  for (let i = period; i <= closes.length; i++) {
+    const h = Math.max(...highs.slice(i - period, i));
+    const l = Math.min(...lows.slice(i - period, i));
+    const c = closes[i - 1];
+    kValues.push(h === l ? 50 : ((c - l) / (h - l)) * 100);
+  }
+  
+  const d = kValues.length >= 3 
+    ? kValues.slice(-3).reduce((a, b) => a + b, 0) / 3 
+    : k;
   
   return { k, d };
 }
 
-// Detect chart patterns
+// Calculate ATR (Average True Range)
+function calculateATR(highs: number[], lows: number[], closes: number[], period = 14): number {
+  if (closes.length < period + 1) return 0;
+  
+  const trueRanges: number[] = [];
+  for (let i = 1; i < closes.length; i++) {
+    const tr = Math.max(
+      highs[i] - lows[i],
+      Math.abs(highs[i] - closes[i - 1]),
+      Math.abs(lows[i] - closes[i - 1])
+    );
+    trueRanges.push(tr);
+  }
+  
+  return trueRanges.slice(-period).reduce((a, b) => a + b, 0) / period;
+}
+
+// Calculate Support and Resistance levels
+function calculateSupportResistance(highs: number[], lows: number[]): { support: number[]; resistance: number[] } {
+  const support: number[] = [];
+  const resistance: number[] = [];
+  
+  const lookback = Math.min(100, highs.length);
+  const recentHighs = highs.slice(-lookback);
+  const recentLows = lows.slice(-lookback);
+  
+  for (let i = 2; i < lookback - 2; i++) {
+    // Swing high
+    if (recentHighs[i] > recentHighs[i-1] && recentHighs[i] > recentHighs[i-2] &&
+        recentHighs[i] > recentHighs[i+1] && recentHighs[i] > recentHighs[i+2]) {
+      resistance.push(recentHighs[i]);
+    }
+    // Swing low
+    if (recentLows[i] < recentLows[i-1] && recentLows[i] < recentLows[i-2] &&
+        recentLows[i] < recentLows[i+1] && recentLows[i] < recentLows[i+2]) {
+      support.push(recentLows[i]);
+    }
+  }
+  
+  return {
+    support: support.sort((a, b) => b - a).slice(0, 3),
+    resistance: resistance.sort((a, b) => a - b).slice(0, 3)
+  };
+}
+
+// Enhanced pattern detection using more historical data
 function detectPatterns(candles: Candle[]): string[] {
   const patterns: string[] = [];
-  if (candles.length < 20) return patterns;
+  if (candles.length < 50) return patterns;
   
   const closes = candles.map(c => c.close);
   const highs = candles.map(c => c.high);
   const lows = candles.map(c => c.low);
+  const opens = candles.map(c => c.open);
   
-  // Trend detection
-  const shortTrend = closes.slice(-5);
-  const isUptrend = shortTrend[shortTrend.length - 1] > shortTrend[0];
+  const last = candles.length - 1;
   
-  // Support/Resistance detection
-  const recentLows = lows.slice(-20);
-  const recentHighs = highs.slice(-20);
-  const support = Math.min(...recentLows);
-  const resistance = Math.max(...recentHighs);
-  const currentPrice = closes[closes.length - 1];
-  
-  if (currentPrice - support < (resistance - support) * 0.1) {
-    patterns.push("Near Support Level");
-  }
-  if (resistance - currentPrice < (resistance - support) * 0.1) {
-    patterns.push("Near Resistance Level");
-  }
-  
-  // Candlestick patterns
-  const last3 = candles.slice(-3);
-  
-  // Doji detection
-  const lastCandle = last3[2];
-  const bodySize = Math.abs(lastCandle.open - lastCandle.close);
-  const totalSize = lastCandle.high - lastCandle.low;
-  if (totalSize > 0 && bodySize / totalSize < 0.1) {
-    patterns.push("Doji - Indecision");
-  }
-  
-  // Engulfing pattern
-  if (last3.length >= 2) {
-    const prev = last3[1];
-    const curr = last3[2];
-    if (prev.close < prev.open && curr.close > curr.open && 
-        curr.open < prev.close && curr.close > prev.open) {
-      patterns.push("Bullish Engulfing");
-    }
-    if (prev.close > prev.open && curr.close < curr.open && 
-        curr.open > prev.close && curr.close < prev.open) {
-      patterns.push("Bearish Engulfing");
+  // Doji detection (last 3 candles)
+  for (let i = last; i > last - 3 && i >= 0; i--) {
+    const body = Math.abs(closes[i] - opens[i]);
+    const range = highs[i] - lows[i];
+    if (range > 0 && body / range < 0.1) {
+      patterns.push('Doji - Indecision');
+      break;
     }
   }
   
-  // Higher highs / Lower lows
-  if (candles.length >= 10) {
-    const last5Highs = highs.slice(-5);
-    const prev5Highs = highs.slice(-10, -5);
-    if (Math.max(...last5Highs) > Math.max(...prev5Highs) && 
-        Math.min(...lows.slice(-5)) > Math.min(...lows.slice(-10, -5))) {
-      patterns.push("Higher Highs & Higher Lows - Uptrend");
+  // Engulfing patterns
+  if (last >= 1) {
+    const prevBody = Math.abs(closes[last-1] - opens[last-1]);
+    const currBody = Math.abs(closes[last] - opens[last]);
+    
+    // Bullish engulfing
+    if (closes[last-1] < opens[last-1] && closes[last] > opens[last] &&
+        opens[last] <= closes[last-1] && closes[last] >= opens[last-1] && currBody > prevBody) {
+      patterns.push('Bullish Engulfing - Reversal Signal');
     }
-    if (Math.max(...last5Highs) < Math.max(...prev5Highs) && 
-        Math.min(...lows.slice(-5)) < Math.min(...lows.slice(-10, -5))) {
-      patterns.push("Lower Highs & Lower Lows - Downtrend");
+    
+    // Bearish engulfing
+    if (closes[last-1] > opens[last-1] && closes[last] < opens[last] &&
+        opens[last] >= closes[last-1] && closes[last] <= opens[last-1] && currBody > prevBody) {
+      patterns.push('Bearish Engulfing - Reversal Signal');
     }
+  }
+  
+  // Double Top/Bottom detection (last 50 candles)
+  const last50Highs = highs.slice(-50);
+  const last50Lows = lows.slice(-50);
+  const maxHigh = Math.max(...last50Highs);
+  const minLow = Math.min(...last50Lows);
+  const tolerance = (maxHigh - minLow) * 0.02;
+  
+  // Find double tops
+  const highPeaks: number[] = [];
+  for (let i = 2; i < last50Highs.length - 2; i++) {
+    if (last50Highs[i] > last50Highs[i-1] && last50Highs[i] > last50Highs[i-2] &&
+        last50Highs[i] > last50Highs[i+1] && last50Highs[i] > last50Highs[i+2]) {
+      highPeaks.push(last50Highs[i]);
+    }
+  }
+  
+  if (highPeaks.length >= 2) {
+    const [peak1, peak2] = highPeaks.slice(-2);
+    if (Math.abs(peak1 - peak2) < tolerance) {
+      patterns.push('Double Top Formation - Bearish Reversal');
+    }
+  }
+  
+  // Find double bottoms
+  const lowTroughs: number[] = [];
+  for (let i = 2; i < last50Lows.length - 2; i++) {
+    if (last50Lows[i] < last50Lows[i-1] && last50Lows[i] < last50Lows[i-2] &&
+        last50Lows[i] < last50Lows[i+1] && last50Lows[i] < last50Lows[i+2]) {
+      lowTroughs.push(last50Lows[i]);
+    }
+  }
+  
+  if (lowTroughs.length >= 2) {
+    const [trough1, trough2] = lowTroughs.slice(-2);
+    if (Math.abs(trough1 - trough2) < tolerance) {
+      patterns.push('Double Bottom Formation - Bullish Reversal');
+    }
+  }
+  
+  // Trend identification using EMAs
+  const ema20 = calculateEMA(closes, 20);
+  const ema50 = calculateEMA(closes, 50);
+  const currentPrice = closes[last];
+  
+  if (currentPrice > ema20 && ema20 > ema50) {
+    patterns.push('Strong Uptrend - Price above EMAs');
+  } else if (currentPrice < ema20 && ema20 < ema50) {
+    patterns.push('Strong Downtrend - Price below EMAs');
+  } else if (currentPrice > ema20 && ema20 < ema50) {
+    patterns.push('Potential Trend Reversal - Bullish crossover forming');
+  } else if (currentPrice < ema20 && ema20 > ema50) {
+    patterns.push('Potential Trend Reversal - Bearish crossover forming');
+  }
+  
+  // Higher highs / Lower lows (last 20 candles)
+  const last20 = candles.slice(-20);
+  const recentHighs = last20.map(c => c.high);
+  const recentLows = last20.map(c => c.low);
+  
+  let higherHighs = 0;
+  let lowerLows = 0;
+  
+  for (let i = 1; i < recentHighs.length; i++) {
+    if (recentHighs[i] > recentHighs[i-1]) higherHighs++;
+    if (recentLows[i] < recentLows[i-1]) lowerLows++;
+  }
+  
+  if (higherHighs > 12) patterns.push('Higher Highs Pattern - Bullish Momentum');
+  if (lowerLows > 12) patterns.push('Lower Lows Pattern - Bearish Momentum');
+  
+  // Near support/resistance
+  const { support, resistance } = calculateSupportResistance(highs, lows);
+  if (support.length > 0 && Math.abs(currentPrice - support[0]) < tolerance * 2) {
+    patterns.push('Near Support Level');
+  }
+  if (resistance.length > 0 && Math.abs(currentPrice - resistance[0]) < tolerance * 2) {
+    patterns.push('Near Resistance Level');
   }
   
   return patterns;
@@ -186,15 +310,32 @@ function calculateIndicators(candles: Candle[]): TechnicalIndicators {
   const highs = candles.map(c => c.high);
   const lows = candles.map(c => c.low);
   
+  const { support, resistance } = calculateSupportResistance(highs, lows);
+  
   return {
     rsi: calculateRSI(closes),
     macd: calculateMACD(closes),
     ema9: calculateEMA(closes, 9),
     ema21: calculateEMA(closes, 21),
     ema50: calculateEMA(closes, 50),
+    ema200: calculateEMA(closes, 200),
     bollingerBands: calculateBollingerBands(closes),
     stochastic: calculateStochastic(highs, lows, closes),
+    atr: calculateATR(highs, lows, closes),
+    supportLevels: support,
+    resistanceLevels: resistance
   };
+}
+
+// Get timeframe-specific settings
+function getTimeframeSettings(timeframe: string) {
+  const settings: Record<string, { expiryHours: number; pipMultiplier: number; description: string }> = {
+    '15m': { expiryHours: 1, pipMultiplier: 0.5, description: 'Short-term scalping' },
+    '1h': { expiryHours: 4, pipMultiplier: 1, description: 'Intraday trading' },
+    '4h': { expiryHours: 24, pipMultiplier: 2, description: 'Swing trading' },
+    '1d': { expiryHours: 72, pipMultiplier: 4, description: 'Position trading' }
+  };
+  return settings[timeframe] || settings['1h'];
 }
 
 serve(async (req) => {
@@ -203,20 +344,61 @@ serve(async (req) => {
   }
 
   try {
-    const { candles, currentPrice } = await req.json();
+    const { candles, currentPrice, timeframe = '1h', sentimentScore = 0 } = await req.json();
     
-    if (!candles || !Array.isArray(candles) || candles.length < 20) {
-      throw new Error("Insufficient price data for analysis");
+    if (!candles || !Array.isArray(candles) || candles.length < 50) {
+      throw new Error("At least 50 candles are required for analysis");
     }
 
-    console.log(`Generating prediction for ${candles.length} candles, current price: ${currentPrice}`);
+    console.log(`Generating prediction for ${candles.length} candles, timeframe: ${timeframe}, current price: ${currentPrice}`);
 
-    // Calculate technical indicators
     const indicators = calculateIndicators(candles);
     const patterns = detectPatterns(candles);
+    const timeframeSettings = getTimeframeSettings(timeframe);
 
     console.log("Technical indicators:", JSON.stringify(indicators));
     console.log("Patterns detected:", patterns);
+
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Fetch last 15 predictions with outcomes for learning
+    const { data: pastPredictions } = await supabase
+      .from('predictions')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(15);
+
+    // Analyze past performance for learning context
+    let learningContext = '';
+    if (pastPredictions && pastPredictions.length > 0) {
+      const wins = pastPredictions.filter(p => p.outcome === 'WIN').length;
+      const losses = pastPredictions.filter(p => p.outcome === 'LOSS').length;
+      const pending = pastPredictions.filter(p => !p.outcome || p.outcome === 'PENDING').length;
+      const winRate = wins + losses > 0 ? ((wins / (wins + losses)) * 100).toFixed(1) : 'N/A';
+
+      const failedTrades = pastPredictions.filter(p => p.outcome === 'LOSS');
+      const failedAnalysis = failedTrades.slice(0, 5).map(t => 
+        `${t.signal_type} at ${t.entry_price}, SL: ${t.stop_loss}`
+      ).join('; ');
+
+      const recentSignals = pastPredictions.slice(0, 5).map(p => p.signal_type);
+      const buyCount = recentSignals.filter(s => s === 'BUY').length;
+      const sellCount = recentSignals.filter(s => s === 'SELL').length;
+
+      learningContext = `
+HISTORICAL PERFORMANCE (Last 15 trades):
+- Wins: ${wins}, Losses: ${losses}, Pending: ${pending}
+- Win Rate: ${winRate}%
+
+${failedTrades.length > 0 ? `RECENT FAILED TRADES (analyze and avoid similar):
+${failedAnalysis}` : ''}
+
+${buyCount >= 4 ? 'CAUTION: Many recent BUY signals. Consider if market is overbought.' : ''}
+${sellCount >= 4 ? 'CAUTION: Many recent SELL signals. Consider if market is oversold.' : ''}`;
+    }
 
     // Call Lovable AI for prediction
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
@@ -224,27 +406,40 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    const analysisPrompt = `You are an expert forex trading analyst specializing in EUR/USD intraday trading. Analyze the following technical data and provide a trading signal.
+    const analysisPrompt = `You are an expert forex trading analyst specializing in EUR/USD. Analyze the data and provide a trading signal.
 
+TIMEFRAME: ${timeframe} (${timeframeSettings.description})
 CURRENT PRICE: ${currentPrice}
+SENTIMENT SCORE: ${sentimentScore} (range: -100 to 100)
 
 TECHNICAL INDICATORS:
-- RSI (14): ${indicators.rsi.toFixed(2)}
-- MACD: Value=${indicators.macd.value.toFixed(5)}, Signal=${indicators.macd.signal.toFixed(5)}, Histogram=${indicators.macd.histogram.toFixed(5)}
+- RSI (14): ${indicators.rsi.toFixed(2)} ${indicators.rsi > 70 ? '(OVERBOUGHT)' : indicators.rsi < 30 ? '(OVERSOLD)' : ''}
+- MACD: ${indicators.macd.value.toFixed(5)} (Signal: ${indicators.macd.signal.toFixed(5)}, Histogram: ${indicators.macd.histogram.toFixed(5)})
 - EMA 9: ${indicators.ema9.toFixed(5)}
 - EMA 21: ${indicators.ema21.toFixed(5)}
 - EMA 50: ${indicators.ema50.toFixed(5)}
-- Bollinger Bands: Upper=${indicators.bollingerBands.upper.toFixed(5)}, Middle=${indicators.bollingerBands.middle.toFixed(5)}, Lower=${indicators.bollingerBands.lower.toFixed(5)}
-- Stochastic: %K=${indicators.stochastic.k.toFixed(2)}, %D=${indicators.stochastic.d.toFixed(2)}
+- EMA 200: ${indicators.ema200.toFixed(5)}
+- Bollinger: Upper ${indicators.bollingerBands.upper.toFixed(5)}, Middle ${indicators.bollingerBands.middle.toFixed(5)}, Lower ${indicators.bollingerBands.lower.toFixed(5)}
+- Stochastic: %K ${indicators.stochastic.k.toFixed(2)}, %D ${indicators.stochastic.d.toFixed(2)}
+- ATR (14): ${indicators.atr.toFixed(5)}
+- Support: ${indicators.supportLevels.map(s => s.toFixed(5)).join(', ') || 'None'}
+- Resistance: ${indicators.resistanceLevels.map(r => r.toFixed(5)).join(', ') || 'None'}
 
-PATTERNS DETECTED: ${patterns.length > 0 ? patterns.join(", ") : "No significant patterns"}
+PATTERNS DETECTED:
+${patterns.length > 0 ? patterns.map(p => `- ${p}`).join('\n') : '- No significant patterns'}
+
+${learningContext}
+
+TIMEFRAME GUIDANCE:
+${timeframe === '15m' ? 'Use tight stops (5-15 pips), quick TP targets. Focus on momentum.' : ''}
+${timeframe === '1h' ? 'Standard stops (15-30 pips), balanced risk/reward.' : ''}
+${timeframe === '4h' ? 'Wider stops (30-50 pips), focus on swing levels.' : ''}
+${timeframe === '1d' ? 'Wide stops (50-100 pips), major support/resistance focus.' : ''}
 
 RECENT PRICE ACTION:
-- 5 candles ago: ${candles[candles.length - 5]?.close.toFixed(5) || 'N/A'}
-- 10 candles ago: ${candles[candles.length - 10]?.close.toFixed(5) || 'N/A'}
-- 20 candles ago: ${candles[candles.length - 20]?.close.toFixed(5) || 'N/A'}
-
-Provide your analysis in the following format. Use realistic pip values for EUR/USD (typical intraday moves are 10-50 pips):`;
+- 10 candles ago: ${candles[candles.length - 10]?.close?.toFixed(5) || 'N/A'}
+- 50 candles ago: ${candles[candles.length - 50]?.close?.toFixed(5) || 'N/A'}
+- 100 candles ago: ${candles[candles.length - 100]?.close?.toFixed(5) || 'N/A'}`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -255,7 +450,7 @@ Provide your analysis in the following format. Use realistic pip values for EUR/
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
         messages: [
-          { role: "system", content: "You are an expert forex trading analyst. Always provide structured trading signals with specific price targets." },
+          { role: "system", content: "You are an expert forex trading analyst. Provide structured trading signals with specific price targets and risk management." },
           { role: "user", content: analysisPrompt }
         ],
         tools: [
@@ -275,10 +470,10 @@ Provide your analysis in the following format. Use realistic pip values for EUR/
                   stop_loss: { type: "number", description: "Stop loss price" },
                   trend_direction: { type: "string", enum: ["BULLISH", "BEARISH", "NEUTRAL"], description: "Overall trend direction" },
                   trend_strength: { type: "number", description: "Trend strength 0-100" },
-                  sentiment_score: { type: "number", description: "Market sentiment -100 (very bearish) to 100 (very bullish)" },
-                  reasoning: { type: "string", description: "Brief explanation of the signal rationale" }
+                  sentiment_score: { type: "number", description: "Market sentiment -100 to 100" },
+                  reasoning: { type: "string", description: "Detailed reasoning for the signal" }
                 },
-                required: ["signal_type", "confidence", "entry_price", "trend_direction", "trend_strength", "sentiment_score", "reasoning"]
+                required: ["signal_type", "confidence", "entry_price", "stop_loss", "take_profit_1", "trend_direction", "trend_strength", "reasoning"]
               }
             }
           }
@@ -309,7 +504,6 @@ Provide your analysis in the following format. Use realistic pip values for EUR/
     const aiResponse = await response.json();
     console.log("AI Response:", JSON.stringify(aiResponse));
 
-    // Extract the function call result
     const toolCall = aiResponse.choices?.[0]?.message?.tool_calls?.[0];
     if (!toolCall || toolCall.function.name !== "generate_trading_signal") {
       throw new Error("Invalid AI response format");
@@ -318,10 +512,9 @@ Provide your analysis in the following format. Use realistic pip values for EUR/
     const signal = JSON.parse(toolCall.function.arguments);
     console.log("Parsed signal:", signal);
 
-    // Store prediction in database
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // Calculate expiry based on timeframe
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + timeframeSettings.expiryHours);
 
     const predictionData = {
       signal_type: signal.signal_type,
@@ -336,8 +529,8 @@ Provide your analysis in the following format. Use realistic pip values for EUR/
       reasoning: signal.reasoning,
       technical_indicators: indicators,
       patterns_detected: patterns,
-      sentiment_score: signal.sentiment_score,
-      outcome: "PENDING",
+      sentiment_score: signal.sentiment_score || sentimentScore,
+      expires_at: expiresAt.toISOString()
     };
 
     const { data: prediction, error: insertError } = await supabase
@@ -358,8 +551,8 @@ Provide your analysis in the following format. Use realistic pip values for EUR/
         success: true,
         prediction: {
           ...prediction,
-          technical_indicators: indicators,
-          patterns_detected: patterns,
+          timeframe,
+          timeframeSettings
         },
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }

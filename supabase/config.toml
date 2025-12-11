@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.fetch-news-sentiment]
 verify_jwt = false
+
+[functions.evaluate-predictions]
+verify_jwt = false
