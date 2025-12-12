@@ -196,3 +196,5 @@ export const TechnicalIndicators = memo(function TechnicalIndicators({
     </div>
   );
 });
+
+export default TechnicalIndicators;

@@ -5,7 +5,7 @@ import { PriceDisplay } from '@/components/trading/PriceDisplay';
 import { CandlestickChart } from '@/components/trading/CandlestickChart';
 import { TimeframeSelector } from '@/components/trading/TimeframeSelector';
 import { SignalCard } from '@/components/trading/SignalCard';
-import { TechnicalIndicators } from '@/components/trading/TechnicalIndicators';
+import TechnicalIndicators from '@/components/trading/TechnicalIndicators';
 import { SentimentPanel } from '@/components/trading/SentimentPanel';
 import { PredictionHistory } from '@/components/trading/PredictionHistory';
 import { useForexData } from '@/hooks/useForexData';
