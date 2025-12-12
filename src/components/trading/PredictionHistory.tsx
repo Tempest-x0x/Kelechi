@@ -57,14 +57,14 @@ export const PredictionHistory = memo(function PredictionHistory({
     HOLD: 'text-neutral',
   };
 
-  const outcomeIcons = {
+  const outcomeIcons: Record<string, typeof CheckCircle> = {
     WIN: CheckCircle,
     LOSS: XCircle,
     PENDING: Hourglass,
     EXPIRED: Clock,
   };
 
-  const outcomeColors = {
+  const outcomeColors: Record<string, string> = {
     WIN: 'text-bullish',
     LOSS: 'text-bearish',
     PENDING: 'text-primary',
@@ -109,7 +109,8 @@ export const PredictionHistory = memo(function PredictionHistory({
       <div className="space-y-2 max-h-[400px] overflow-y-auto scrollbar-thin">
         {predictions.map((prediction) => {
           const SignalIcon = signalIcons[prediction.signal_type];
-          const OutcomeIcon = outcomeIcons[prediction.outcome];
+          const outcomeKey = prediction.outcome || 'PENDING';
+          const OutcomeIcon = outcomeIcons[outcomeKey] || Hourglass;
 
           return (
             <div
@@ -137,9 +138,9 @@ export const PredictionHistory = memo(function PredictionHistory({
               </div>
 
               {/* Outcome */}
-              <div className={cn('flex items-center gap-1', outcomeColors[prediction.outcome])}>
+              <div className={cn('flex items-center gap-1', outcomeColors[outcomeKey] || 'text-muted-foreground')}>
                 <OutcomeIcon className="h-4 w-4" />
-                <span className="text-xs font-medium">{prediction.outcome}</span>
+                <span className="text-xs font-medium">{outcomeKey}</span>
               </div>
             </div>
           );
