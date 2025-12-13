@@ -29,6 +29,50 @@ async function fetchCurrentPrice(): Promise<number> {
   return parseFloat(data.price);
 }
 
+// Fetch price history since prediction was made
+async function fetchPriceHistory(since: Date): Promise<{ high: number; low: number; current: number }> {
+  const apiKey = Deno.env.get('TWELVE_DATA_API_KEY');
+  if (!apiKey) {
+    throw new Error('TWELVE_DATA_API_KEY not configured');
+  }
+
+  // Calculate how many 15-min bars we need
+  const now = new Date();
+  const minutesSince = Math.ceil((now.getTime() - since.getTime()) / (1000 * 60));
+  const outputSize = Math.min(Math.max(Math.ceil(minutesSince / 15), 10), 200);
+
+  const response = await fetch(
+    `https://api.twelvedata.com/time_series?symbol=EUR/USD&interval=15min&outputsize=${outputSize}&apikey=${apiKey}`
+  );
+  
+  if (!response.ok) {
+    throw new Error(`Failed to fetch price history: ${response.statusText}`);
+  }
+  
+  const data = await response.json();
+  if (data.code || !data.values) {
+    // Fall back to current price only
+    const current = await fetchCurrentPrice();
+    return { high: current, low: current, current };
+  }
+  
+  const values = data.values as Array<{ high: string; low: string; close: string }>;
+  
+  let high = -Infinity;
+  let low = Infinity;
+  
+  for (const candle of values) {
+    const candleHigh = parseFloat(candle.high);
+    const candleLow = parseFloat(candle.low);
+    if (candleHigh > high) high = candleHigh;
+    if (candleLow < low) low = candleLow;
+  }
+  
+  const current = parseFloat(values[0].close);
+  
+  return { high, low, current };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -42,7 +86,6 @@ serve(async (req) => {
       const body = await req.json();
       currentPrice = body.currentPrice;
     } catch {
-      // No body or invalid JSON - fetch price ourselves
       currentPrice = 0;
     }
     
@@ -75,30 +118,40 @@ serve(async (req) => {
     const now = new Date();
 
     for (const prediction of pendingPredictions || []) {
+      const createdAt = new Date(prediction.created_at);
       const expiresAt = new Date(prediction.expires_at);
       const isExpired = now > expiresAt;
+      
+      // Fetch price history since prediction was made to check if TP/SL was EVER hit
+      let priceHistory: { high: number; low: number; current: number };
+      try {
+        priceHistory = await fetchPriceHistory(createdAt);
+        console.log(`Price history for prediction ${prediction.id}: High=${priceHistory.high.toFixed(5)}, Low=${priceHistory.low.toFixed(5)}, Current=${priceHistory.current.toFixed(5)}`);
+      } catch (e) {
+        console.error(`Failed to fetch price history: ${e}`);
+        priceHistory = { high: currentPrice, low: currentPrice, current: currentPrice };
+      }
       
       let outcome: 'WIN' | 'LOSS' | null = null;
       let failureReason: string | null = null;
       let successFactors: string | null = null;
 
       if (prediction.signal_type === 'BUY') {
-        // Check if TP1 or TP2 was hit (WIN)
-        if (currentPrice >= prediction.take_profit_1) {
+        // Check if TP1 or TP2 was EVER hit during the trade (using high)
+        if (priceHistory.high >= prediction.take_profit_1) {
           outcome = 'WIN';
-          successFactors = currentPrice >= (prediction.take_profit_2 || prediction.take_profit_1) 
+          successFactors = priceHistory.high >= (prediction.take_profit_2 || prediction.take_profit_1) 
             ? 'Hit TP2 - Strong momentum continuation' 
             : 'Hit TP1 - Primary target reached';
         } 
-        // Check if SL was hit (LOSS)
-        else if (currentPrice <= prediction.stop_loss) {
+        // Check if SL was EVER hit (using low)
+        else if (priceHistory.low <= prediction.stop_loss) {
           outcome = 'LOSS';
           failureReason = 'Stop loss hit - Price reversed against position';
         }
         // Check if expired without hitting targets
         else if (isExpired) {
-          // Determine if it was a partial win (moved in right direction) or loss
-          if (currentPrice > prediction.entry_price) {
+          if (priceHistory.current > prediction.entry_price) {
             outcome = 'WIN';
             successFactors = 'Expired in profit - Partial target achieved';
           } else {
@@ -107,21 +160,21 @@ serve(async (req) => {
           }
         }
       } else if (prediction.signal_type === 'SELL') {
-        // Check if TP1 or TP2 was hit (WIN)
-        if (currentPrice <= prediction.take_profit_1) {
+        // Check if TP1 or TP2 was EVER hit during the trade (using low)
+        if (priceHistory.low <= prediction.take_profit_1) {
           outcome = 'WIN';
-          successFactors = currentPrice <= (prediction.take_profit_2 || prediction.take_profit_1)
+          successFactors = priceHistory.low <= (prediction.take_profit_2 || prediction.take_profit_1)
             ? 'Hit TP2 - Strong bearish continuation'
             : 'Hit TP1 - Primary target reached';
         }
-        // Check if SL was hit (LOSS)
-        else if (currentPrice >= prediction.stop_loss) {
+        // Check if SL was EVER hit (using high)
+        else if (priceHistory.high >= prediction.stop_loss) {
           outcome = 'LOSS';
           failureReason = 'Stop loss hit - Price reversed against position';
         }
         // Check if expired without hitting targets
         else if (isExpired) {
-          if (currentPrice < prediction.entry_price) {
+          if (priceHistory.current < prediction.entry_price) {
             outcome = 'WIN';
             successFactors = 'Expired in profit - Partial target achieved';
           } else {
@@ -130,10 +183,9 @@ serve(async (req) => {
           }
         }
       } else if (prediction.signal_type === 'HOLD') {
-        // HOLD signals are marked as WIN if price stayed relatively stable
         if (isExpired) {
-          const priceChange = Math.abs(currentPrice - prediction.entry_price) / prediction.entry_price;
-          if (priceChange < 0.005) { // Less than 0.5% movement
+          const priceChange = Math.abs(priceHistory.current - prediction.entry_price) / prediction.entry_price;
+          if (priceChange < 0.005) {
             outcome = 'WIN';
             successFactors = 'Correctly identified consolidation period';
           } else {
@@ -149,7 +201,7 @@ serve(async (req) => {
           .from('predictions')
           .update({
             outcome,
-            outcome_price: currentPrice,
+            outcome_price: priceHistory.current,
             outcome_at: now.toISOString()
           })
           .eq('id', prediction.id);
@@ -164,7 +216,9 @@ serve(async (req) => {
           signal_type: prediction.signal_type,
           outcome,
           entry_price: prediction.entry_price,
-          outcome_price: currentPrice
+          outcome_price: priceHistory.current,
+          high_reached: priceHistory.high,
+          low_reached: priceHistory.low
         });
 
         // Extract learning from this prediction
@@ -177,7 +231,9 @@ serve(async (req) => {
 
         const marketConditions = {
           entry_price: prediction.entry_price,
-          outcome_price: currentPrice,
+          outcome_price: priceHistory.current,
+          high_reached: priceHistory.high,
+          low_reached: priceHistory.low,
           trend_direction: prediction.trend_direction,
           trend_strength: prediction.trend_strength,
           sentiment_score: prediction.sentiment_score
@@ -185,22 +241,21 @@ serve(async (req) => {
 
         let lessonExtracted = '';
         if (outcome === 'LOSS') {
-          // Analyze why the trade failed
           const indicators = prediction.technical_indicators as any;
           
           if (prediction.signal_type === 'BUY' && indicators?.rsi > 70) {
             lessonExtracted = 'Avoid BUY signals when RSI is in overbought territory (>70)';
           } else if (prediction.signal_type === 'SELL' && indicators?.rsi < 30) {
             lessonExtracted = 'Avoid SELL signals when RSI is in oversold territory (<30)';
-          } else if (prediction.signal_type === 'BUY' && currentPrice < indicators?.ema50) {
+          } else if (prediction.signal_type === 'BUY' && priceHistory.current < indicators?.ema50) {
             lessonExtracted = 'BUY signal failed when price was below EMA50 - wait for price to reclaim EMA';
-          } else if (prediction.signal_type === 'SELL' && currentPrice > indicators?.ema50) {
+          } else if (prediction.signal_type === 'SELL' && priceHistory.current > indicators?.ema50) {
             lessonExtracted = 'SELL signal failed when price was above EMA50 - wait for breakdown';
           } else {
-            lessonExtracted = `${prediction.signal_type} signal at ${prediction.entry_price} failed. Review pattern reliability.`;
+            lessonExtracted = `${prediction.signal_type} signal at ${prediction.entry_price} failed. SL hit at ${priceHistory.high >= prediction.stop_loss ? priceHistory.high.toFixed(5) : priceHistory.low.toFixed(5)}`;
           }
         } else {
-          lessonExtracted = `${prediction.signal_type} signal succeeded. Pattern: ${(prediction.patterns_detected as string[])?.join(', ') || 'N/A'}`;
+          lessonExtracted = `${prediction.signal_type} signal succeeded. TP hit at ${prediction.signal_type === 'BUY' ? priceHistory.high.toFixed(5) : priceHistory.low.toFixed(5)}. Pattern: ${(prediction.patterns_detected as string[])?.join(', ') || 'N/A'}`;
         }
 
         // Store learning
