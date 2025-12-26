@@ -13,8 +13,17 @@ export function useForexData(timeframe: Timeframe = '1h') {
     setError(null);
 
     try {
+      const outputsizeByTimeframe: Record<Timeframe, number> = {
+        '1min': 180,
+        '5min': 150,
+        '15min': 150,
+        '30min': 150,
+        '1h': 200,
+        '4h': 200,
+      };
+
       const { data: result, error: fnError } = await supabase.functions.invoke('fetch-forex-data', {
-        body: { timeframe, outputsize: 300 },
+        body: { timeframe, outputsize: outputsizeByTimeframe[timeframe] ?? 200 },
       });
 
       if (fnError) throw fnError;
@@ -42,11 +51,20 @@ export function useForexData(timeframe: Timeframe = '1h') {
     fetchData();
   }, [fetchData]);
 
-  // Auto-refresh every 60 seconds
+  // Auto-refresh (slower on higher timeframes to reduce API usage)
   useEffect(() => {
-    const interval = setInterval(fetchData, 60000);
+    const refreshMsByTimeframe: Record<Timeframe, number> = {
+      '1min': 30_000,
+      '5min': 60_000,
+      '15min': 120_000,
+      '30min': 300_000,
+      '1h': 300_000,
+      '4h': 900_000,
+    };
+
+    const interval = setInterval(fetchData, refreshMsByTimeframe[timeframe] ?? 300_000);
     return () => clearInterval(interval);
-  }, [fetchData]);
+  }, [fetchData, timeframe]);
 
   return { data, isLoading, error, refetch: fetchData, lastUpdated };
 }
