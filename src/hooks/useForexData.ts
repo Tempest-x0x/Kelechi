@@ -28,8 +28,8 @@ export function useForexData(timeframe: Timeframe = '1h') {
 
       if (fnError) throw fnError;
 
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to fetch forex data');
+      if (!result?.success) {
+        throw new Error(result?.error || 'Failed to fetch forex data');
       }
 
       setData({
@@ -41,7 +41,38 @@ export function useForexData(timeframe: Timeframe = '1h') {
       setLastUpdated(new Date());
     } catch (err) {
       console.error('Error fetching forex data:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch data');
+      const message = err instanceof Error ? err.message : 'Failed to fetch data';
+
+      // Fallback: load cached candles directly from the backend cache table.
+      const { data: cachedRows, error: cacheError } = await supabase
+        .from('price_history')
+        .select('timestamp, open, high, low, close, volume')
+        .eq('symbol', 'EUR/USD')
+        .eq('timeframe', timeframe)
+        .order('timestamp', { ascending: true })
+        .limit(300);
+
+      if (!cacheError && cachedRows && cachedRows.length > 0) {
+        const candles = cachedRows.map((row) => ({
+          timestamp: row.timestamp,
+          open: Number(row.open),
+          high: Number(row.high),
+          low: Number(row.low),
+          close: Number(row.close),
+          volume: row.volume === null ? undefined : Number(row.volume),
+        }));
+
+        setData({
+          symbol: 'EUR/USD',
+          currentPrice: candles[candles.length - 1]?.close ?? 0,
+          candles,
+          meta: { source: 'cache_fallback', warning: message },
+        });
+        setLastUpdated(new Date());
+        setError(`Using cached data: ${message}`);
+      } else {
+        setError(message);
+      }
     } finally {
       setIsLoading(false);
     }
