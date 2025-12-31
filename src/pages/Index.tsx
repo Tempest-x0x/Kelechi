@@ -8,13 +8,16 @@ import { SignalCard } from '@/components/trading/SignalCard';
 import TechnicalIndicators from '@/components/trading/TechnicalIndicators';
 import { SentimentPanel } from '@/components/trading/SentimentPanel';
 import { PatternStatsPanel } from '@/components/trading/PatternStatsPanel';
+import { OpportunitiesPanel } from '@/components/trading/OpportunitiesPanel';
 import { PredictionHistory } from '@/components/trading/PredictionHistory';
 import { LearningsPanel } from '@/components/trading/LearningsPanel';
 import { useForexData } from '@/hooks/useForexData';
 import { usePrediction } from '@/hooks/usePrediction';
 import { usePredictionHistory } from '@/hooks/usePredictionHistory';
+import { useOpportunities } from '@/hooks/useOpportunities';
 import { Timeframe } from '@/types/trading';
 import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 const Index = () => {
   const [timeframe, setTimeframe] = useState<Timeframe>('1h');
@@ -22,11 +25,26 @@ const Index = () => {
   const { data: forexData, isLoading: forexLoading, error: forexError } = useForexData(timeframe);
   const { prediction, isLoading: predictionLoading, generatePrediction } = usePrediction();
   const { predictions, isLoading: historyLoading } = usePredictionHistory();
+  const { opportunities, isLoading: opportunitiesLoading, isScanning, lastScanned, triggerScan } = useOpportunities();
 
   const handleGeneratePrediction = () => {
     if (forexData?.candles) {
-      // Sentiment disabled - pass null
       generatePrediction(forexData.candles, timeframe, null);
+    }
+  };
+
+  const handleScan = async () => {
+    try {
+      const result = await triggerScan();
+      if (result.opportunity) {
+        toast.success(`New ${result.opportunity.signal_type} opportunity detected!`);
+      } else if (result.scanned) {
+        toast.info(result.message || 'No opportunities found');
+      } else {
+        toast.info(result.message || 'Scan skipped');
+      }
+    } catch (err) {
+      toast.error('Failed to scan for opportunities');
     }
   };
 
@@ -89,8 +107,16 @@ const Index = () => {
               />
             </div>
 
-            {/* Right Column - Signal & Sentiment */}
+            {/* Right Column - Opportunities & Signal */}
             <div className="lg:col-span-4 space-y-4">
+              <OpportunitiesPanel 
+                opportunities={opportunities}
+                isLoading={opportunitiesLoading}
+                isScanning={isScanning}
+                lastScanned={lastScanned}
+                onScan={handleScan}
+              />
+              
               <SignalCard 
                 prediction={prediction}
                 isLoading={predictionLoading}

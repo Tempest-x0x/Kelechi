@@ -214,6 +214,66 @@ export type Database = {
         }
         Relationships: []
       }
+      trading_opportunities: {
+        Row: {
+          confidence: number
+          created_at: string | null
+          current_price: number
+          entry_price: number
+          expires_at: string
+          id: string
+          outcome: string | null
+          pattern_stats: Json | null
+          patterns_detected: Json | null
+          reasoning: string | null
+          signal_type: string
+          status: string | null
+          stop_loss: number | null
+          take_profit_1: number | null
+          take_profit_2: number | null
+          technical_indicators: Json | null
+          triggered_at: string | null
+        }
+        Insert: {
+          confidence: number
+          created_at?: string | null
+          current_price: number
+          entry_price: number
+          expires_at: string
+          id?: string
+          outcome?: string | null
+          pattern_stats?: Json | null
+          patterns_detected?: Json | null
+          reasoning?: string | null
+          signal_type: string
+          status?: string | null
+          stop_loss?: number | null
+          take_profit_1?: number | null
+          take_profit_2?: number | null
+          technical_indicators?: Json | null
+          triggered_at?: string | null
+        }
+        Update: {
+          confidence?: number
+          created_at?: string | null
+          current_price?: number
+          entry_price?: number
+          expires_at?: string
+          id?: string
+          outcome?: string | null
+          pattern_stats?: Json | null
+          patterns_detected?: Json | null
+          reasoning?: string | null
+          signal_type?: string
+          status?: string | null
+          stop_loss?: number | null
+          take_profit_1?: number | null
+          take_profit_2?: number | null
+          technical_indicators?: Json | null
+          triggered_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
