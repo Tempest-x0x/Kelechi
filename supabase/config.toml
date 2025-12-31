@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.evaluate-predictions]
 verify_jwt = false
+
+[functions.import-pattern-stats]
+verify_jwt = false

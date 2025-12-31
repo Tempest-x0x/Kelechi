@@ -14,6 +14,63 @@ export type Database = {
   }
   public: {
     Tables: {
+      pattern_statistics: {
+        Row: {
+          avg_pips_12h: number | null
+          avg_pips_24h: number | null
+          avg_pips_48h: number | null
+          avg_pips_4h: number | null
+          created_at: string | null
+          data_end_date: string | null
+          data_start_date: string | null
+          id: string
+          occurrences: number
+          pattern_name: string
+          sample_size: number | null
+          signal_type: string
+          win_rate_12h: number | null
+          win_rate_24h: number | null
+          win_rate_48h: number | null
+          win_rate_4h: number | null
+        }
+        Insert: {
+          avg_pips_12h?: number | null
+          avg_pips_24h?: number | null
+          avg_pips_48h?: number | null
+          avg_pips_4h?: number | null
+          created_at?: string | null
+          data_end_date?: string | null
+          data_start_date?: string | null
+          id?: string
+          occurrences: number
+          pattern_name: string
+          sample_size?: number | null
+          signal_type: string
+          win_rate_12h?: number | null
+          win_rate_24h?: number | null
+          win_rate_48h?: number | null
+          win_rate_4h?: number | null
+        }
+        Update: {
+          avg_pips_12h?: number | null
+          avg_pips_24h?: number | null
+          avg_pips_48h?: number | null
+          avg_pips_4h?: number | null
+          created_at?: string | null
+          data_end_date?: string | null
+          data_start_date?: string | null
+          id?: string
+          occurrences?: number
+          pattern_name?: string
+          sample_size?: number | null
+          signal_type?: string
+          win_rate_12h?: number | null
+          win_rate_24h?: number | null
+          win_rate_48h?: number | null
+          win_rate_4h?: number | null
+        }
+        Relationships: []
+      }
       prediction_learnings: {
         Row: {
           created_at: string

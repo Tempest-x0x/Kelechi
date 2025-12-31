@@ -587,6 +587,81 @@ serve(async (req) => {
       .order('created_at', { ascending: false })
       .limit(10);
 
+    // Fetch historical pattern statistics (25 years of data)
+    const { data: patternStats } = await supabase
+      .from('pattern_statistics')
+      .select('*');
+
+    console.log(`Loaded ${patternStats?.length || 0} pattern statistics`);
+
+    // Build historical pattern statistics context
+    let patternStatsContext = '';
+    if (patternStats && patternStats.length > 0) {
+      // Map detected patterns to database pattern names
+      const patternMapping: Record<string, string[]> = {
+        'rsi_oversold': ['RSI oversold', 'OVERSOLD', 'rsi < 30'],
+        'rsi_overbought': ['RSI overbought', 'OVERBOUGHT', 'rsi > 70'],
+        'macd_bullish_cross': ['MACD bullish', 'Bullish crossover'],
+        'macd_bearish_cross': ['MACD bearish', 'Bearish crossover'],
+        'bb_lower_touch': ['Bollinger Lower', 'lower Bollinger', 'below lower'],
+        'bb_upper_touch': ['Bollinger Upper', 'upper Bollinger', 'above upper'],
+        'bullish_engulfing': ['Bullish Engulfing'],
+        'bearish_engulfing': ['Bearish Engulfing'],
+        'golden_cross': ['Strong Uptrend', 'Golden Cross', 'EMA alignment bullish'],
+        'death_cross': ['Strong Downtrend', 'Death Cross', 'EMA alignment bearish'],
+      };
+
+      // Find which patterns are currently detected
+      const detectedDbPatterns: string[] = [];
+      patterns.forEach((pattern: string) => {
+        Object.entries(patternMapping).forEach(([dbName, keywords]) => {
+          if (keywords.some(kw => pattern.toLowerCase().includes(kw.toLowerCase()))) {
+            if (!detectedDbPatterns.includes(dbName)) {
+              detectedDbPatterns.push(dbName);
+            }
+          }
+        });
+      });
+
+      // Check indicator conditions
+      if (indicators.rsi < 30) detectedDbPatterns.push('rsi_oversold');
+      if (indicators.rsi > 70) detectedDbPatterns.push('rsi_overbought');
+      if (currentPrice < indicators.bollingerBands.lower) detectedDbPatterns.push('bb_lower_touch');
+      if (currentPrice > indicators.bollingerBands.upper) detectedDbPatterns.push('bb_upper_touch');
+      if (indicators.macd.histogram > 0 && indicators.macd.value > indicators.macd.signal) {
+        detectedDbPatterns.push('macd_bullish_cross');
+      }
+      if (indicators.macd.histogram < 0 && indicators.macd.value < indicators.macd.signal) {
+        detectedDbPatterns.push('macd_bearish_cross');
+      }
+
+      // Unique patterns
+      const uniqueDetected = [...new Set(detectedDbPatterns)];
+
+      // Get stats for detected patterns
+      const matchedStats = patternStats.filter((s: any) => uniqueDetected.includes(s.pattern_name));
+      const goodPatterns = matchedStats.filter((s: any) => s.win_rate_24h >= 51);
+      const badPatterns = matchedStats.filter((s: any) => s.win_rate_24h < 48);
+
+      patternStatsContext = `
+HISTORICAL PATTERN STATISTICS (25 years of EUR/USD M1 data, 2001-2025):
+
+${matchedStats.length > 0 ? `CURRENTLY DETECTED PATTERNS WITH HISTORICAL PERFORMANCE:
+${matchedStats.map((s: any) => 
+  `- ${s.pattern_name.replace(/_/g, ' ').toUpperCase()} (${s.signal_type}): ${s.win_rate_24h?.toFixed(1)}% win rate over 24 candles, avg ${s.avg_pips_24h?.toFixed(2)} pips (n=${s.occurrences.toLocaleString()})`
+).join('\n')}` : 'No patterns with historical data currently detected.'}
+
+${goodPatterns.length > 0 ? `✅ HISTORICALLY RELIABLE PATTERNS (>51% win rate):
+${goodPatterns.map((s: any) => `- ${s.pattern_name}: ${s.win_rate_24h?.toFixed(1)}% win rate`).join('\n')}
+→ Increase confidence if signal aligns with these patterns` : ''}
+
+${badPatterns.length > 0 ? `⚠️ HISTORICALLY WEAK PATTERNS (<48% win rate):
+${badPatterns.map((s: any) => `- ${s.pattern_name}: ${s.win_rate_24h?.toFixed(1)}% win rate`).join('\n')}
+→ Consider reducing confidence or avoiding signals based solely on these` : ''}
+
+KEY INSIGHT: Use these statistics to inform your confidence level. Patterns with >52% win rate are statistically significant.`;
+    }
+
     // Analyze past performance for learning context
     let learningContext = '';
     if (pastPredictions && pastPredictions.length > 0) {
@@ -669,6 +744,8 @@ TECHNICAL INDICATORS:
 
 PATTERNS DETECTED:
 ${patterns.length > 0 ? patterns.map(p => `- ${p}`).join('\n') : '- No significant patterns'}
+
+${patternStatsContext}
 
 ${confirmationContext}
 

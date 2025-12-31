@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { ThemeProvider } from 'next-themes';
 import { Header } from '@/components/trading/Header';
 import { PriceDisplay } from '@/components/trading/PriceDisplay';
@@ -7,12 +7,12 @@ import { TimeframeSelector } from '@/components/trading/TimeframeSelector';
 import { SignalCard } from '@/components/trading/SignalCard';
 import TechnicalIndicators from '@/components/trading/TechnicalIndicators';
 import { SentimentPanel } from '@/components/trading/SentimentPanel';
+import { PatternStatsPanel } from '@/components/trading/PatternStatsPanel';
 import { PredictionHistory } from '@/components/trading/PredictionHistory';
 import { LearningsPanel } from '@/components/trading/LearningsPanel';
 import { useForexData } from '@/hooks/useForexData';
 import { usePrediction } from '@/hooks/usePrediction';
 import { usePredictionHistory } from '@/hooks/usePredictionHistory';
-import { useMarketSentiment } from '@/hooks/useMarketSentiment';
 import { Timeframe } from '@/types/trading';
 import { Loader2 } from 'lucide-react';
 
@@ -22,16 +22,11 @@ const Index = () => {
   const { data: forexData, isLoading: forexLoading, error: forexError } = useForexData(timeframe);
   const { prediction, isLoading: predictionLoading, generatePrediction } = usePrediction();
   const { predictions, isLoading: historyLoading } = usePredictionHistory();
-  const { sentiment, isLoading: sentimentLoading, fetchSentiment } = useMarketSentiment();
-
-  // Fetch sentiment on mount
-  useEffect(() => {
-    fetchSentiment();
-  }, [fetchSentiment]);
 
   const handleGeneratePrediction = () => {
     if (forexData?.candles) {
-      generatePrediction(forexData.candles, timeframe, sentiment?.sentiment_score ?? null);
+      // Sentiment disabled - pass null
+      generatePrediction(forexData.candles, timeframe, null);
     }
   };
 
@@ -104,8 +99,12 @@ const Index = () => {
               />
               
               <SentimentPanel 
-                sentiment={sentiment}
-                isLoading={sentimentLoading}
+                sentiment={null}
+                isLoading={false}
+              />
+              
+              <PatternStatsPanel 
+                detectedPatterns={prediction?.patterns_detected as string[] | undefined}
               />
             </div>
           </div>
