@@ -78,6 +78,7 @@ export type Database = {
           id: string
           lesson_extracted: string
           market_conditions: Json | null
+          opportunity_id: string | null
           pattern_context: Json | null
           prediction_id: string | null
           success_factors: string | null
@@ -88,6 +89,7 @@ export type Database = {
           id?: string
           lesson_extracted: string
           market_conditions?: Json | null
+          opportunity_id?: string | null
           pattern_context?: Json | null
           prediction_id?: string | null
           success_factors?: string | null
@@ -98,11 +100,19 @@ export type Database = {
           id?: string
           lesson_extracted?: string
           market_conditions?: Json | null
+          opportunity_id?: string | null
           pattern_context?: Json | null
           prediction_id?: string | null
           success_factors?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "prediction_learnings_opportunity_id_fkey"
+            columns: ["opportunity_id"]
+            isOneToOne: false
+            referencedRelation: "trading_opportunities"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "prediction_learnings_prediction_id_fkey"
             columns: ["prediction_id"]
@@ -216,10 +226,12 @@ export type Database = {
       }
       trading_opportunities: {
         Row: {
+          ai_learning_id: string | null
           confidence: number
           created_at: string | null
           current_price: number
           entry_price: number
+          evaluated_at: string | null
           expires_at: string
           id: string
           outcome: string | null
@@ -235,10 +247,12 @@ export type Database = {
           triggered_at: string | null
         }
         Insert: {
+          ai_learning_id?: string | null
           confidence: number
           created_at?: string | null
           current_price: number
           entry_price: number
+          evaluated_at?: string | null
           expires_at: string
           id?: string
           outcome?: string | null
@@ -254,10 +268,12 @@ export type Database = {
           triggered_at?: string | null
         }
         Update: {
+          ai_learning_id?: string | null
           confidence?: number
           created_at?: string | null
           current_price?: number
           entry_price?: number
+          evaluated_at?: string | null
           expires_at?: string
           id?: string
           outcome?: string | null
@@ -272,7 +288,15 @@ export type Database = {
           technical_indicators?: Json | null
           triggered_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "trading_opportunities_ai_learning_id_fkey"
+            columns: ["ai_learning_id"]
+            isOneToOne: false
+            referencedRelation: "prediction_learnings"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
