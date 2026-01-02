@@ -26,3 +26,12 @@ verify_jwt = false
 
 [functions.import-historical-data]
 verify_jwt = false
+
+[functions.paystack-initialize]
+verify_jwt = false
+
+[functions.paystack-webhook]
+verify_jwt = false
+
+[functions.verify-subscription]
+verify_jwt = false
