@@ -11,6 +11,7 @@ import { PatternStatsPanel } from '@/components/trading/PatternStatsPanel';
 import { OpportunitiesPanel } from '@/components/trading/OpportunitiesPanel';
 import { PredictionHistory } from '@/components/trading/PredictionHistory';
 import { LearningsPanel } from '@/components/trading/LearningsPanel';
+import { BacktestPanel } from '@/components/trading/BacktestPanel';
 import { useForexData } from '@/hooks/useForexData';
 import { usePrediction } from '@/hooks/usePrediction';
 import { usePredictionHistory } from '@/hooks/usePredictionHistory';
@@ -135,9 +136,9 @@ const Index = () => {
             </div>
           </div>
 
-          {/* Prediction History & Learnings */}
+          {/* Prediction History, Learnings & Backtest */}
           <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
+            <div className="lg:col-span-1">
               <PredictionHistory 
                 predictions={predictions}
                 isLoading={historyLoading}
@@ -145,6 +146,9 @@ const Index = () => {
             </div>
             <div className="lg:col-span-1">
               <LearningsPanel />
+            </div>
+            <div className="lg:col-span-1">
+              <BacktestPanel />
             </div>
           </div>
         </main>

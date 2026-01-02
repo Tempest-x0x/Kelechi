@@ -3,20 +3,10 @@ import { supabase } from '@/integrations/supabase/client';
 
 export interface Learning {
   id: string;
-  prediction_id: string;
-  pattern_context: {
-    patterns: string[];
-    indicators: Record<string, number>;
-    signal_type: string;
-    confidence: number;
-  } | null;
-  market_conditions: {
-    entry_price: number;
-    outcome_price: number;
-    trend_direction: string;
-    trend_strength: number;
-    sentiment_score: number;
-  } | null;
+  prediction_id: string | null;
+  opportunity_id?: string | null;
+  pattern_context: Record<string, unknown> | null;
+  market_conditions: Record<string, unknown> | null;
   lesson_extracted: string;
   failure_reason: string | null;
   success_factors: string | null;

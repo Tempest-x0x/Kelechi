@@ -80,7 +80,12 @@ export function LearningsPanel() {
             <div className="space-y-3 pr-3">
               {learnings.map((learning) => {
                 const isWin = !!learning.success_factors;
-                const signalType = learning.pattern_context?.signal_type || 'UNKNOWN';
+                const patternContext = learning.pattern_context as Record<string, unknown> | null;
+                const marketConditions = learning.market_conditions as Record<string, unknown> | null;
+                const signalType = (patternContext?.signal_type as string) || 'UNKNOWN';
+                const patterns = patternContext?.patterns as string[] | undefined;
+                const entryPrice = marketConditions?.entry_price as number | undefined;
+                const outcomePrice = marketConditions?.outcome_price as number | undefined;
                 
                 return (
                   <div 
@@ -125,18 +130,18 @@ export function LearningsPanel() {
                     </p>
 
                     {/* Price Movement */}
-                    {learning.market_conditions && (
+                    {entryPrice !== undefined && outcomePrice !== undefined && (
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>Entry: {learning.market_conditions.entry_price?.toFixed(5)}</span>
+                        <span>Entry: {entryPrice.toFixed(5)}</span>
                         <span>→</span>
-                        <span>Exit: {learning.market_conditions.outcome_price?.toFixed(5)}</span>
+                        <span>Exit: {outcomePrice.toFixed(5)}</span>
                       </div>
                     )}
 
                     {/* Patterns */}
-                    {learning.pattern_context?.patterns && learning.pattern_context.patterns.length > 0 && (
+                    {patterns && patterns.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-2">
-                        {learning.pattern_context.patterns.slice(0, 2).map((pattern, idx) => (
+                        {patterns.slice(0, 2).map((pattern, idx) => (
                           <Badge key={idx} variant="secondary" className="text-[10px] px-1.5 py-0">
                             {pattern}
                           </Badge>
