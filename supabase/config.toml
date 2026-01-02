@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.backtest-strategy]
 verify_jwt = false
+
+[functions.import-historical-data]
+verify_jwt = false
