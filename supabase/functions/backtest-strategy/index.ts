@@ -242,24 +242,51 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch historical data
-    let query = supabase
-      .from('price_history')
-      .select('*')
-      .eq('symbol', 'EUR/USD')
-      .eq('timeframe', '1h')
-      .order('timestamp', { ascending: true });
+    // Fetch historical data with pagination to handle large datasets
+    const allPriceData: any[] = [];
+    let lastTimestamp: string | null = null;
+    const PAGE_SIZE = 50000;
+    
+    console.log(`Fetching price data from ${startDate || 'beginning'} to ${endDate || 'end'}`);
+    
+    while (true) {
+      let query = supabase
+        .from('price_history')
+        .select('*')
+        .eq('symbol', 'EUR/USD')
+        .eq('timeframe', '1h')
+        .order('timestamp', { ascending: true })
+        .limit(PAGE_SIZE);
 
-    if (startDate) query = query.gte('timestamp', startDate);
-    if (endDate) query = query.lte('timestamp', endDate);
+      if (startDate) query = query.gte('timestamp', startDate);
+      if (endDate) query = query.lte('timestamp', endDate);
+      if (lastTimestamp) query = query.gt('timestamp', lastTimestamp);
 
-    const { data: priceData, error: priceError } = await query.limit(10000);
+      const { data: pageData, error: pageError } = await query;
 
-    if (priceError || !priceData) {
-      throw new Error("Failed to fetch price data");
+      if (pageError) {
+        throw new Error(`Failed to fetch price data: ${pageError.message}`);
+      }
+
+      if (!pageData || pageData.length === 0) break;
+
+      allPriceData.push(...pageData);
+      lastTimestamp = pageData[pageData.length - 1].timestamp;
+      
+      console.log(`Loaded ${allPriceData.length} candles so far...`);
+
+      // If we got less than page size, we've reached the end
+      if (pageData.length < PAGE_SIZE) break;
+      
+      // Safety limit to prevent infinite loops
+      if (allPriceData.length > 500000) {
+        console.log('Reached 500k candle limit');
+        break;
+      }
     }
 
-    console.log(`Loaded ${priceData.length} candles`);
+    const priceData = allPriceData;
+    console.log(`Total loaded: ${priceData.length} candles`);
 
     if (priceData.length < 100) {
       return new Response(
