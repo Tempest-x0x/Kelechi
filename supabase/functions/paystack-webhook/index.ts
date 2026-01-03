@@ -6,6 +6,28 @@ const PAYSTACK_SECRET_KEY = Deno.env.get('PAYSTACK_SECRET_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
+async function sendWelcomeEmail(email: string, planType: string, name?: string) {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/send-welcome-email`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      body: JSON.stringify({ email, planType, name }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Failed to send welcome email:', errorText);
+    } else {
+      console.log('Welcome email triggered successfully');
+    }
+  } catch (error) {
+    console.error('Error triggering welcome email:', error);
+  }
+}
+
 serve(async (req) => {
   try {
     // Verify webhook signature
@@ -48,6 +70,9 @@ serve(async (req) => {
           })
           .eq('paystack_reference', reference);
 
+        let userEmail = customer?.email || metadata?.email;
+        let planType = metadata?.plan_type;
+
         if (updateError) {
           console.error('Error updating subscription:', updateError);
           
@@ -74,6 +99,11 @@ serve(async (req) => {
               console.error('Error creating subscription:', insertError);
             }
           }
+        }
+
+        // Send welcome email
+        if (userEmail && planType) {
+          await sendWelcomeEmail(userEmail, planType);
         }
 
         console.log(`Subscription activated for reference: ${reference}`);

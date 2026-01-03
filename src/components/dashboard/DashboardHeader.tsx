@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, Moon, Sun, LogOut, User, CreditCard } from 'lucide-react';
+import { Activity, Moon, Sun, LogOut, User, CreditCard, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -106,6 +106,12 @@ export const DashboardHeader = memo(function DashboardHeader({
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link to="/settings" className="cursor-pointer">
+                  <Settings className="mr-2 h-4 w-4" />
+                  Account Settings
+                </Link>
+              </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link to="/track-record" className="cursor-pointer">
                   <Activity className="mr-2 h-4 w-4" />

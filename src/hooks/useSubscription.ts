@@ -10,6 +10,9 @@ interface Subscription {
   current_period_start: string;
   current_period_end: string | null;
   created_at: string;
+  paystack_subscription_code: string | null;
+  paystack_customer_code: string | null;
+  paystack_reference: string | null;
 }
 
 export const useSubscription = () => {
@@ -26,7 +29,8 @@ export const useSubscription = () => {
         return null;
       }
 
-      const { data, error: fetchError } = await supabase
+      // First try to get active subscription
+      let { data, error: fetchError } = await supabase
         .from('subscriptions')
         .select('*')
         .eq('user_id', session.user.id)
@@ -34,6 +38,21 @@ export const useSubscription = () => {
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
+
+      // If no active, check for cancelled (still valid until period end)
+      if (!data) {
+        const result = await supabase
+          .from('subscriptions')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .in('status', ['cancelled', 'expired'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        data = result.data;
+        fetchError = result.error;
+      }
 
       if (fetchError) {
         console.error('Error fetching subscription:', fetchError);
@@ -84,7 +103,8 @@ export const useSubscription = () => {
     return () => authSubscription.unsubscribe();
   }, [fetchSubscription]);
 
-  const hasActiveSubscription = subscription?.status === 'active';
+  const hasActiveSubscription = subscription?.status === 'active' || 
+    (subscription?.status === 'cancelled' && subscription?.current_period_end && new Date(subscription.current_period_end) > new Date());
 
   const isLifetime = subscription?.plan_type === 'lifetime';
 

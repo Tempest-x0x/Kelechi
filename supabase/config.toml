@@ -35,3 +35,12 @@ verify_jwt = false
 
 [functions.verify-subscription]
 verify_jwt = false
+
+[functions.send-welcome-email]
+verify_jwt = false
+
+[functions.send-subscription-reminder]
+verify_jwt = false
+
+[functions.cancel-subscription]
+verify_jwt = false
