@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, Loader2, Star } from 'lucide-react';
+import { Check, Loader2, Star } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -30,7 +29,6 @@ export const PricingCard = ({
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubscribe = async () => {
-    // Check if user is logged in
     const { data: { session } } = await supabase.auth.getSession();
     
     if (!session) {
@@ -66,53 +64,61 @@ export const PricingCard = ({
   };
 
   return (
-    <Card className={`relative ${popular ? 'border-primary shadow-lg shadow-primary/20' : ''}`}>
+    <div className={`relative premium-card p-8 flex flex-col ${
+      popular 
+        ? 'border-primary shadow-primary-glow ring-1 ring-primary/20' 
+        : ''
+    }`}>
       {popular && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <Badge className="bg-primary text-primary-foreground">
-            <Star className="h-3 w-3 mr-1" />
+        <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
+          <Badge className="bg-primary text-primary-foreground px-4 py-1.5 rounded-full shadow-lg">
+            <Star className="h-3.5 w-3.5 mr-1.5 fill-current" />
             Most Popular
           </Badge>
         </div>
       )}
       
-      <CardHeader className="text-center pb-2">
-        <CardTitle className="text-xl">{name}</CardTitle>
-        <div className="mt-4">
-          <span className="text-4xl font-bold">${priceUSD}</span>
-          <span className="text-muted-foreground">/{period === 'month' ? 'mo' : 'once'}</span>
+      <div className="text-center mb-8">
+        <h3 className="text-lg font-semibold mb-4">{name}</h3>
+        <div className="mb-2">
+          <span className="text-5xl font-bold">${priceUSD}</span>
+          <span className="text-muted-foreground ml-1">/{period === 'month' ? 'mo' : 'once'}</span>
         </div>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="text-sm text-muted-foreground">
           ₦{priceNGN.toLocaleString()}
         </p>
-      </CardHeader>
+      </div>
 
-      <CardContent className="space-y-3">
+      <div className="space-y-4 flex-1 mb-8">
         {features.map((feature, index) => (
-          <div key={index} className="flex items-start gap-2">
-            <CheckCircle2 className="h-4 w-4 text-bullish mt-0.5 shrink-0" />
-            <span className="text-sm">{feature}</span>
+          <div key={index} className="flex items-start gap-3">
+            <div className="p-0.5 rounded-full bg-[hsl(var(--bullish))]/10 mt-0.5">
+              <Check className="h-3.5 w-3.5 text-[hsl(var(--bullish))]" />
+            </div>
+            <span className="text-sm leading-relaxed">{feature}</span>
           </div>
         ))}
-      </CardContent>
+      </div>
 
-      <CardFooter>
-        <Button 
-          className="w-full" 
-          variant={popular ? 'default' : 'outline'}
-          onClick={handleSubscribe}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Processing...
-            </>
-          ) : (
-            'Get Started'
-          )}
-        </Button>
-      </CardFooter>
-    </Card>
+      <Button 
+        className={`w-full h-12 rounded-full text-base font-medium transition-all ${
+          popular 
+            ? 'shadow-primary-glow hover:shadow-lg' 
+            : ''
+        }`}
+        variant={popular ? 'default' : 'outline'}
+        onClick={handleSubscribe}
+        disabled={isLoading}
+      >
+        {isLoading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Processing...
+          </>
+        ) : (
+          'Get Started'
+        )}
+      </Button>
+    </div>
   );
 };
