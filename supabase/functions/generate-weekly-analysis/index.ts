@@ -106,18 +106,24 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          {
-            role: "system",
-            content: `You are a professional forex analyst generating weekly post-mortem content for X (Twitter). 
+    // Add timeout to prevent hanging
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    let aiContent = "";
+    try {
+      const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            {
+              role: "system",
+              content: `You are a professional forex analyst generating weekly post-mortem content for X (Twitter). 
 Your analysis should be:
 - Concise and actionable
 - Focus on EUR/USD
@@ -134,10 +140,10 @@ Format each section clearly with the headers:
 ---WEEKLY_REVIEW---
 ---WEEK_AHEAD---
 ---DETAILED---`,
-          },
-          {
-            role: "user",
-            content: `Generate weekly EUR/USD post-mortem analysis based on this data:
+            },
+            {
+              role: "user",
+              content: `Generate weekly EUR/USD post-mortem analysis based on this data:
 
 ${JSON.stringify(analysisContext, null, 2)}
 
@@ -147,19 +153,40 @@ Create content for X posts that:
 3. Provides next week's directional bias
 4. Lists key levels to watch
 5. Includes both bullish and bearish scenarios`,
-          },
-        ],
-      }),
-    });
+            },
+          ],
+        }),
+        signal: controller.signal,
+      });
 
-    if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error("AI API error:", aiResponse.status, errorText);
-      throw new Error(`AI API error: ${aiResponse.status}`);
+      clearTimeout(timeoutId);
+
+      // Handle rate limits
+      if (aiResponse.status === 429 || aiResponse.status === 402) {
+        console.warn("AI rate limited, using fallback content");
+      } else if (!aiResponse.ok) {
+        const errorText = await aiResponse.text();
+        console.error("AI API error:", aiResponse.status, errorText);
+      } else {
+        // Read as text first for safer handling
+        const responseText = await aiResponse.text();
+        console.log("AI response length:", responseText.length);
+
+        if (responseText && responseText.length > 0) {
+          try {
+            const aiData = JSON.parse(responseText);
+            aiContent = aiData.choices?.[0]?.message?.content || "";
+          } catch (parseError) {
+            console.error("Failed to parse AI response:", parseError);
+            console.error("Raw response (first 500 chars):", responseText.substring(0, 500));
+          }
+        }
+      }
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      console.error("AI fetch error:", fetchError);
+      // Continue with fallback content
     }
-
-    const aiData = await aiResponse.json();
-    const aiContent = aiData.choices?.[0]?.message?.content || "";
 
     // Parse the AI response into sections
     const weeklyReviewMatch = aiContent.match(/---WEEKLY_REVIEW---\s*([\s\S]*?)(?=---WEEK_AHEAD---|$)/);
