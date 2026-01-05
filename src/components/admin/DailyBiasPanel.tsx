@@ -34,16 +34,24 @@ const DailyBiasPanel = () => {
 
       setMorningBias(data.post || "");
       setBiasDirection(data.direction || null);
-      setPriceData(
-        data.priceData?.map((p: any) => ({
-          timestamp: p.timestamp,
-          open: Number(p.open),
-          high: Number(p.high),
-          low: Number(p.low),
-          close: Number(p.close),
-        })) || []
-      );
-      setKeyLevels(data.keyLevels || {});
+      
+      console.log("Morning Bias Response:", data);
+      console.log("Price Data received:", data.priceData?.length || 0, "candles");
+      
+      if (data.priceData && data.priceData.length > 0) {
+        setPriceData(
+          data.priceData.map((p: any) => ({
+            timestamp: p.timestamp,
+            open: Number(p.open),
+            high: Number(p.high),
+            low: Number(p.low),
+            close: Number(p.close),
+          }))
+        );
+        setKeyLevels(data.keyLevels || {});
+      } else {
+        console.warn("No price data returned from generate-daily-bias");
+      }
 
       toast({
         title: "Morning Bias Generated",
@@ -74,16 +82,24 @@ const DailyBiasPanel = () => {
       if (error) throw error;
 
       setEveningRecap(data.post || "");
-      setPriceData(
-        data.priceData?.map((p: any) => ({
-          timestamp: p.timestamp,
-          open: Number(p.open),
-          high: Number(p.high),
-          low: Number(p.low),
-          close: Number(p.close),
-        })) || []
-      );
-      setKeyLevels(data.keyLevels || {});
+      
+      console.log("Evening Recap Response:", data);
+      console.log("Price Data received:", data.priceData?.length || 0, "candles");
+      
+      if (data.priceData && data.priceData.length > 0) {
+        setPriceData(
+          data.priceData.map((p: any) => ({
+            timestamp: p.timestamp,
+            open: Number(p.open),
+            high: Number(p.high),
+            low: Number(p.low),
+            close: Number(p.close),
+          }))
+        );
+        setKeyLevels(data.keyLevels || {});
+      } else {
+        console.warn("No price data returned from generate-daily-bias");
+      }
 
       toast({
         title: "Evening Recap Generated",
@@ -161,24 +177,30 @@ const DailyBiasPanel = () => {
       </Card>
 
       {/* Price Chart */}
-      {priceData.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Daily Price Action (48H)</CardTitle>
-            <CardDescription>
-              EUR/USD for {format(new Date(), "MMMM d, yyyy")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Daily Price Action (48H)</CardTitle>
+          <CardDescription>
+            EUR/USD for {format(new Date(), "MMMM d, yyyy")}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {priceData.length > 0 ? (
             <CandlestickChart
               candles={priceData}
               height={300}
               takeProfit1={keyLevels.resistance}
               stopLoss={keyLevels.support}
             />
-          </CardContent>
-        </Card>
-      )}
+          ) : (
+            <div className="h-[300px] flex items-center justify-center text-muted-foreground border border-dashed rounded-lg">
+              {loadingMorning || loadingEvening 
+                ? "Loading chart data..." 
+                : "Generate morning bias or evening recap to see the chart"}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Morning Bias Post */}
       <Card>
