@@ -9,6 +9,8 @@ import { format, startOfWeek, endOfWeek, subWeeks } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { CandlestickChart } from "@/components/trading/CandlestickChart";
+import { Candle } from "@/types/trading";
 
 const WeeklyPostMortem = () => {
   const { toast } = useToast();
@@ -21,6 +23,8 @@ const WeeklyPostMortem = () => {
   const [weeklyReview, setWeeklyReview] = useState("");
   const [weekAheadOutlook, setWeekAheadOutlook] = useState("");
   const [detailedAnalysis, setDetailedAnalysis] = useState("");
+  const [priceData, setPriceData] = useState<Candle[]>([]);
+  const [keyLevels, setKeyLevels] = useState<{ highest?: number; lowest?: number }>({});
 
   const generateAnalysis = async () => {
     setLoading(true);
@@ -37,6 +41,16 @@ const WeeklyPostMortem = () => {
       setWeeklyReview(data.weeklyReview || "");
       setWeekAheadOutlook(data.weekAheadOutlook || "");
       setDetailedAnalysis(data.detailedAnalysis || "");
+      setPriceData(
+        data.priceData?.map((p: any) => ({
+          timestamp: p.timestamp,
+          open: Number(p.open),
+          high: Number(p.high),
+          low: Number(p.low),
+          close: Number(p.close),
+        })) || []
+      );
+      setKeyLevels(data.keyLevels || {});
 
       toast({
         title: "Analysis Generated",
@@ -132,6 +146,26 @@ const WeeklyPostMortem = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Weekly Price Chart */}
+      {priceData.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Weekly Price Action</CardTitle>
+            <CardDescription>
+              EUR/USD from {format(dateRange.from, "MMM dd")} to {dateRange.to ? format(dateRange.to, "MMM dd, yyyy") : ""}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CandlestickChart
+              candles={priceData}
+              height={350}
+              takeProfit1={keyLevels.highest}
+              stopLoss={keyLevels.lowest}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Weekly Review Post */}
       <Card>
