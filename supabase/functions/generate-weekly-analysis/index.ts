@@ -44,16 +44,20 @@ serve(async (req) => {
       console.error("Error fetching learnings:", learnError);
     }
 
-    // Fetch latest price data for next week outlook
+    // Fetch price data for the selected date range (for chart)
     const { data: priceData, error: priceError } = await supabase
       .from("price_history")
       .select("*")
-      .order("timestamp", { ascending: false })
-      .limit(100);
+      .gte("timestamp", `${startDate}T00:00:00Z`)
+      .lte("timestamp", `${endDate}T23:59:59Z`)
+      .order("timestamp", { ascending: true });
 
     if (priceError) {
       console.error("Error fetching price data:", priceError);
     }
+
+    // Get latest price for context
+    const latestPriceData = priceData?.[priceData.length - 1] || null;
 
     // Calculate statistics
     const totalPredictions = predictions?.length || 0;
@@ -73,8 +77,7 @@ serve(async (req) => {
     const highestEntry = entryPrices.length > 0 ? Math.max(...entryPrices) : null;
     const lowestEntry = entryPrices.length > 0 ? Math.min(...entryPrices) : null;
 
-    // Get latest price for context
-    const latestPrice = priceData?.[0]?.close || null;
+    const latestPrice = latestPriceData?.close || null;
 
     // Build context for AI
     const analysisContext = {
@@ -242,6 +245,12 @@ ${learnings?.map((l) => `- ${l.lesson_extracted || "N/A"}`).join("\n") || "No le
         weekAheadOutlook,
         detailedAnalysis,
         stats: analysisContext.stats,
+        priceData: priceData || [],
+        keyLevels: {
+          highest: highestEntry,
+          lowest: lowestEntry,
+          current: latestPrice,
+        },
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
