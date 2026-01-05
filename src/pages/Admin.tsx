@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, Moon, Sun } from "lucide-react";
 import WeeklyPostMortem from "@/components/admin/WeeklyPostMortem";
 import DailyBiasPanel from "@/components/admin/DailyBiasPanel";
+import WhitelistPanel from "@/components/admin/WhitelistPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const Admin = () => {
@@ -76,9 +77,10 @@ const Admin = () => {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
         <Tabs defaultValue="weekly" className="w-full">
-          <TabsList className="grid w-full max-w-md grid-cols-2 mb-6">
+          <TabsList className="grid w-full max-w-lg grid-cols-3 mb-6">
             <TabsTrigger value="weekly">Weekly Post-Mortem</TabsTrigger>
             <TabsTrigger value="daily">Daily Bias</TabsTrigger>
+            <TabsTrigger value="whitelist">Whitelist</TabsTrigger>
           </TabsList>
           
           <TabsContent value="weekly">
@@ -87,6 +89,10 @@ const Admin = () => {
           
           <TabsContent value="daily">
             <DailyBiasPanel />
+          </TabsContent>
+          
+          <TabsContent value="whitelist">
+            <WhitelistPanel />
           </TabsContent>
         </Tabs>
       </main>
