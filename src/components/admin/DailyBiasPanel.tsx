@@ -6,6 +6,8 @@ import { Copy, Loader2, Sun, Moon, TrendingUp, TrendingDown } from "lucide-react
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { CandlestickChart } from "@/components/trading/CandlestickChart";
+import { Candle } from "@/types/trading";
 
 const DailyBiasPanel = () => {
   const { toast } = useToast();
@@ -15,6 +17,8 @@ const DailyBiasPanel = () => {
   const [morningBias, setMorningBias] = useState("");
   const [eveningRecap, setEveningRecap] = useState("");
   const [biasDirection, setBiasDirection] = useState<"BULLISH" | "BEARISH" | "NEUTRAL" | null>(null);
+  const [priceData, setPriceData] = useState<Candle[]>([]);
+  const [keyLevels, setKeyLevels] = useState<{ high?: number; low?: number; resistance?: number; support?: number }>({});
 
   const generateMorningBias = async () => {
     setLoadingMorning(true);
@@ -30,6 +34,16 @@ const DailyBiasPanel = () => {
 
       setMorningBias(data.post || "");
       setBiasDirection(data.direction || null);
+      setPriceData(
+        data.priceData?.map((p: any) => ({
+          timestamp: p.timestamp,
+          open: Number(p.open),
+          high: Number(p.high),
+          low: Number(p.low),
+          close: Number(p.close),
+        })) || []
+      );
+      setKeyLevels(data.keyLevels || {});
 
       toast({
         title: "Morning Bias Generated",
@@ -60,6 +74,16 @@ const DailyBiasPanel = () => {
       if (error) throw error;
 
       setEveningRecap(data.post || "");
+      setPriceData(
+        data.priceData?.map((p: any) => ({
+          timestamp: p.timestamp,
+          open: Number(p.open),
+          high: Number(p.high),
+          low: Number(p.low),
+          close: Number(p.close),
+        })) || []
+      );
+      setKeyLevels(data.keyLevels || {});
 
       toast({
         title: "Evening Recap Generated",
@@ -135,6 +159,26 @@ const DailyBiasPanel = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Price Chart */}
+      {priceData.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Daily Price Action (48H)</CardTitle>
+            <CardDescription>
+              EUR/USD for {format(new Date(), "MMMM d, yyyy")}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CandlestickChart
+              candles={priceData}
+              height={300}
+              takeProfit1={keyLevels.resistance}
+              stopLoss={keyLevels.support}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Morning Bias Post */}
       <Card>

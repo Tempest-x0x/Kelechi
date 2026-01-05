@@ -193,6 +193,15 @@ Follow for daily EUR/USD analysis.`;
 
     console.log(`${type} bias generated successfully`);
 
+    // Return price data for chart (last 48 hours)
+    const chartData = prices.slice(0, 48).reverse().map((p) => ({
+      timestamp: p.timestamp,
+      open: p.open,
+      high: p.high,
+      low: p.low,
+      close: p.close,
+    }));
+
     return new Response(
       JSON.stringify({
         post,
@@ -203,6 +212,13 @@ Follow for daily EUR/USD analysis.`;
           support: recentLow,
           sma20,
           sma50,
+        },
+        priceData: chartData,
+        keyLevels: {
+          high: todayHigh,
+          low: todayLow,
+          resistance: recentHigh,
+          support: recentLow,
         },
       }),
       {
