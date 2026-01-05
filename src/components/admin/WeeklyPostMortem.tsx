@@ -9,7 +9,7 @@ import { format, startOfWeek, endOfWeek, subWeeks } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { CandlestickChart } from "@/components/trading/CandlestickChart";
+import { TradingViewChart } from "@/components/trading/TradingViewChart";
 import { Candle } from "@/types/trading";
 
 const WeeklyPostMortem = () => {
@@ -157,7 +157,7 @@ const WeeklyPostMortem = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <CandlestickChart
+            <TradingViewChart
               candles={priceData}
               height={350}
               takeProfit1={keyLevels.highest}

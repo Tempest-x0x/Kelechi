@@ -6,7 +6,7 @@ import { Copy, Loader2, Sun, Moon, TrendingUp, TrendingDown } from "lucide-react
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { CandlestickChart } from "@/components/trading/CandlestickChart";
+import { TradingViewChart } from "@/components/trading/TradingViewChart";
 import { Candle } from "@/types/trading";
 
 const DailyBiasPanel = () => {
@@ -186,7 +186,7 @@ const DailyBiasPanel = () => {
         </CardHeader>
         <CardContent>
           {priceData.length > 0 ? (
-            <CandlestickChart
+            <TradingViewChart
               candles={priceData}
               height={300}
               takeProfit1={keyLevels.resistance}

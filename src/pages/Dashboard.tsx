@@ -4,7 +4,7 @@ import { ThemeProvider } from 'next-themes';
 import { supabase } from '@/integrations/supabase/client';
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader';
 import { PriceDisplay } from '@/components/trading/PriceDisplay';
-import { CandlestickChart } from '@/components/trading/CandlestickChart';
+import { TradingViewChart } from '@/components/trading/TradingViewChart';
 import { TimeframeSelector } from '@/components/trading/TimeframeSelector';
 import { SignalCard } from '@/components/trading/SignalCard';
 import TechnicalIndicators from '@/components/trading/TechnicalIndicators';
@@ -21,6 +21,7 @@ import { usePredictionHistory } from '@/hooks/usePredictionHistory';
 import { useOpportunities } from '@/hooks/useOpportunities';
 import { useSubscription } from '@/hooks/useSubscription';
 import { useAdmin } from '@/hooks/useAdmin';
+import { useWhitelist } from '@/hooks/useWhitelist';
 import { Timeframe } from '@/types/trading';
 import { Loader2, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -40,9 +41,10 @@ const Dashboard = () => {
   const { opportunities, isLoading: opportunitiesLoading, isScanning, lastScanned, triggerScan } = useOpportunities();
   const { subscription, isLoading: subscriptionLoading, hasActiveSubscription, waitForSubscription } = useSubscription();
   const { isAdmin, isLoading: adminLoading } = useAdmin();
+  const { isWhitelisted, isLoading: whitelistLoading } = useWhitelist();
 
-  // Allow access if user has subscription OR is admin
-  const hasAccess = hasActiveSubscription || isAdmin;
+  // Allow access if user has subscription OR is admin OR is whitelisted
+  const hasAccess = hasActiveSubscription || isAdmin || isWhitelisted;
 
   // Handle payment callback verification
   useEffect(() => {
@@ -128,7 +130,7 @@ const Dashboard = () => {
     navigate('/');
   };
 
-  if (isAuthLoading || subscriptionLoading || adminLoading || isVerifyingPayment) {
+  if (isAuthLoading || subscriptionLoading || adminLoading || whitelistLoading || isVerifyingPayment) {
     return (
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
         <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
@@ -181,14 +183,13 @@ const Dashboard = () => {
                     {forexError}
                   </div>
                 ) : forexData?.candles ? (
-                  <CandlestickChart 
+                  <TradingViewChart 
                     candles={forexData.candles}
                     currentPrice={forexData.currentPrice}
                     entryPrice={prediction?.entry_price}
                     stopLoss={prediction?.stop_loss ?? undefined}
                     takeProfit1={prediction?.take_profit_1}
                     takeProfit2={prediction?.take_profit_2}
-                    indicators={prediction?.technical_indicators}
                   />
                 ) : (
                   <div className="h-[400px] flex items-center justify-center text-muted-foreground">

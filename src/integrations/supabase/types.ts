@@ -393,6 +393,33 @@ export type Database = {
         }
         Relationships: []
       }
+      whitelisted_emails: {
+        Row: {
+          added_by: string | null
+          created_at: string | null
+          email: string
+          expires_at: string | null
+          id: string
+          reason: string | null
+        }
+        Insert: {
+          added_by?: string | null
+          created_at?: string | null
+          email: string
+          expires_at?: string | null
+          id?: string
+          reason?: string | null
+        }
+        Update: {
+          added_by?: string | null
+          created_at?: string | null
+          email?: string
+          expires_at?: string | null
+          id?: string
+          reason?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
