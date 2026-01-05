@@ -604,6 +604,33 @@ serve(async (req) => {
 
     console.log("Created new opportunity:", newOpp.id);
 
+    // Send Telegram notification for new opportunity
+    try {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+      
+      await fetch(`${supabaseUrl}/functions/v1/send-telegram-notification`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify({
+          signal_type: newOpp.signal_type,
+          confidence: newOpp.confidence,
+          entry_price: newOpp.entry_price,
+          stop_loss: newOpp.stop_loss,
+          take_profit_1: newOpp.take_profit_1,
+          take_profit_2: newOpp.take_profit_2,
+          reasoning: newOpp.reasoning,
+        }),
+      });
+      console.log("Telegram notification sent for opportunity:", newOpp.id);
+    } catch (notifyError) {
+      console.error("Failed to send Telegram notification:", notifyError);
+      // Don't fail the whole request if notification fails
+    }
+
     return new Response(
       JSON.stringify({ 
         success: true, 

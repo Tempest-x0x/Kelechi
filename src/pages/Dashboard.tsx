@@ -20,6 +20,7 @@ import { usePrediction } from '@/hooks/usePrediction';
 import { usePredictionHistory } from '@/hooks/usePredictionHistory';
 import { useOpportunities } from '@/hooks/useOpportunities';
 import { useSubscription } from '@/hooks/useSubscription';
+import { useAdmin } from '@/hooks/useAdmin';
 import { Timeframe } from '@/types/trading';
 import { Loader2, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -38,6 +39,10 @@ const Dashboard = () => {
   const { predictions, isLoading: historyLoading } = usePredictionHistory();
   const { opportunities, isLoading: opportunitiesLoading, isScanning, lastScanned, triggerScan } = useOpportunities();
   const { subscription, isLoading: subscriptionLoading, hasActiveSubscription, waitForSubscription } = useSubscription();
+  const { isAdmin, isLoading: adminLoading } = useAdmin();
+
+  // Allow access if user has subscription OR is admin
+  const hasAccess = hasActiveSubscription || isAdmin;
 
   // Handle payment callback verification
   useEffect(() => {
@@ -123,7 +128,7 @@ const Dashboard = () => {
     navigate('/');
   };
 
-  if (isAuthLoading || subscriptionLoading || isVerifyingPayment) {
+  if (isAuthLoading || subscriptionLoading || adminLoading || isVerifyingPayment) {
     return (
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
         <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
@@ -245,7 +250,8 @@ const Dashboard = () => {
         </main>
 
         {/* Upgrade Modal for non-subscribers */}
-        {!hasActiveSubscription && <UpgradeModal />}
+        {/* Upgrade Modal - blocks access for non-subscribers (admins bypass) */}
+        {!hasAccess && <UpgradeModal forceBlock={true} />}
       </div>
     </ThemeProvider>
   );

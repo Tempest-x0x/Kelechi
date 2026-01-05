@@ -11,7 +11,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle2, Zap, Lock } from 'lucide-react';
 
-export const UpgradeModal = () => {
+interface UpgradeModalProps {
+  forceBlock?: boolean;
+}
+
+export const UpgradeModal = ({ forceBlock = false }: UpgradeModalProps) => {
   const navigate = useNavigate();
   const [open, setOpen] = useState(true);
 
@@ -28,9 +32,14 @@ export const UpgradeModal = () => {
     navigate('/#pricing');
   };
 
+  const handleClose = (value: boolean) => {
+    if (forceBlock) return; // Prevent closing when access is blocked
+    setOpen(value);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => forceBlock && e.preventDefault()}>
         <DialogHeader>
           <div className="flex items-center gap-2 mb-2">
             <div className="p-2 bg-primary/10 rounded-lg">
@@ -41,9 +50,14 @@ export const UpgradeModal = () => {
               Premium Feature
             </Badge>
           </div>
-          <DialogTitle className="text-xl">Upgrade to Access Full Dashboard</DialogTitle>
+          <DialogTitle className="text-xl">
+            {forceBlock ? 'Subscribe to Access Dashboard' : 'Upgrade to Access Full Dashboard'}
+          </DialogTitle>
           <DialogDescription>
-            You're viewing the dashboard in preview mode. Subscribe to unlock all features.
+            {forceBlock 
+              ? 'A subscription is required to access trading signals and opportunities.'
+              : 'You\'re viewing the dashboard in preview mode. Subscribe to unlock all features.'
+            }
           </DialogDescription>
         </DialogHeader>
 
@@ -60,9 +74,11 @@ export const UpgradeModal = () => {
           <Button onClick={handleViewPricing} className="w-full">
             View Pricing Plans
           </Button>
-          <Button variant="ghost" onClick={() => setOpen(false)} className="w-full">
-            Continue Preview
-          </Button>
+          {!forceBlock && (
+            <Button variant="ghost" onClick={() => setOpen(false)} className="w-full">
+              Continue Preview
+            </Button>
+          )}
         </div>
 
         <p className="text-xs text-muted-foreground text-center">
