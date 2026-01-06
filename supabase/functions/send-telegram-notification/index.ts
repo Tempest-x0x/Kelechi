@@ -16,6 +16,12 @@ interface OpportunityNotification {
   take_profit_1: number;
   take_profit_2: number;
   reasoning: string;
+  is_reversal?: boolean;
+  previous_signal?: {
+    signal_type: string;
+    confidence: number;
+    created_at: string;
+  };
 }
 
 serve(async (req) => {
@@ -33,13 +39,24 @@ serve(async (req) => {
     }
 
     const opportunity: OpportunityNotification = await req.json();
-    console.log("Sending Telegram notification for:", opportunity.signal_type);
+    console.log("Sending Telegram notification for:", opportunity.signal_type, opportunity.is_reversal ? "(REVERSAL)" : "");
     
     const emoji = opportunity.signal_type === 'BUY' ? '🟢' : '🔴';
     const arrow = opportunity.signal_type === 'BUY' ? '⬆️' : '⬇️';
     
+    // Build reversal header if applicable
+    let reversalHeader = '';
+    if (opportunity.is_reversal && opportunity.previous_signal) {
+      const prevEmoji = opportunity.previous_signal.signal_type === 'BUY' ? '🟢' : '🔴';
+      reversalHeader = `⚠️ *SIGNAL REVERSAL*
+
+Previous ${prevEmoji} ${opportunity.previous_signal.signal_type} signal (${opportunity.previous_signal.confidence.toFixed(0)}%) has been superseded.
+
+`;
+    }
+    
     const message = `
-${emoji} *NEW ${opportunity.signal_type} SIGNAL* ${arrow}
+${reversalHeader}${emoji} *NEW ${opportunity.signal_type} SIGNAL* ${arrow}
 
 📊 *EUR/USD*
 💯 Confidence: ${opportunity.confidence.toFixed(0)}%

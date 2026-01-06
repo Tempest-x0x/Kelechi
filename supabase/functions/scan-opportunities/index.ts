@@ -531,6 +531,52 @@ serve(async (req) => {
       );
     }
 
+    // Check for conflicting active signals (opposite direction)
+    const oppositeSignal = analysis.signal === 'BUY' ? 'SELL' : 'BUY';
+    const { data: conflictingOpps } = await supabase
+      .from('trading_opportunities')
+      .select('id, signal_type, confidence, created_at, entry_price')
+      .eq('status', 'ACTIVE')
+      .eq('signal_type', oppositeSignal);
+
+    let isSignalReversal = false;
+    let previousSignal: { signal_type: string; confidence: number; created_at: string } | null = null;
+
+    if (conflictingOpps && conflictingOpps.length > 0) {
+      const mostRecentConflict = conflictingOpps[0];
+      const conflictAge = Date.now() - new Date(mostRecentConflict.created_at).getTime();
+      const oneHourMs = 60 * 60 * 1000;
+
+      // Cooldown: require 1 hour OR 10%+ higher confidence to reverse
+      if (conflictAge < oneHourMs && analysis.confidence < mostRecentConflict.confidence + 10) {
+        console.log(`Cooldown active: ${oppositeSignal} signal from ${mostRecentConflict.created_at} is less than 1 hour old`);
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            message: `Cooldown active: Recent ${oppositeSignal} signal (${mostRecentConflict.confidence.toFixed(0)}%) is less than 1 hour old. Need 10%+ higher confidence to reverse.`, 
+            scanned: true,
+            cooldownRemaining: Math.ceil((oneHourMs - conflictAge) / 60000) + ' minutes'
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Expire conflicting signals
+      console.log(`Expiring ${conflictingOpps.length} conflicting ${oppositeSignal} signal(s) due to reversal`);
+      await supabase
+        .from('trading_opportunities')
+        .update({ status: 'EXPIRED', outcome: 'EXPIRED' })
+        .eq('status', 'ACTIVE')
+        .eq('signal_type', oppositeSignal);
+
+      isSignalReversal = true;
+      previousSignal = {
+        signal_type: mostRecentConflict.signal_type,
+        confidence: mostRecentConflict.confidence,
+        created_at: mostRecentConflict.created_at
+      };
+    }
+
     // Enhanced duplicate check - look at recent opportunities (4 hours) regardless of status
     // and require significant price movement before creating new opportunity
     const { data: recentOpps } = await supabase
@@ -623,9 +669,11 @@ serve(async (req) => {
           take_profit_1: newOpp.take_profit_1,
           take_profit_2: newOpp.take_profit_2,
           reasoning: newOpp.reasoning,
+          is_reversal: isSignalReversal,
+          previous_signal: previousSignal,
         }),
       });
-      console.log("Telegram notification sent for opportunity:", newOpp.id);
+      console.log("Telegram notification sent for opportunity:", newOpp.id, isSignalReversal ? "(REVERSAL)" : "");
     } catch (notifyError) {
       console.error("Failed to send Telegram notification:", notifyError);
       // Don't fail the whole request if notification fails
