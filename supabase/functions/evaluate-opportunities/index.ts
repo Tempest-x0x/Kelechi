@@ -44,8 +44,9 @@ function createPatternHash(patterns: string[], signalType: string): string {
 // Determine outcome by checking if SL or TP was hit
 function evaluateOutcome(
   opportunity: Opportunity,
-  priceHistory: PricePoint[]
-): { outcome: 'WIN' | 'LOSS' | 'EXPIRED'; outcomePrice: number; outcomeAt: string } {
+  priceHistory: PricePoint[],
+  isExpired: boolean
+): { outcome: 'WIN' | 'LOSS' | 'EXPIRED' | 'PENDING'; outcomePrice: number; outcomeAt: string } {
   const { signal_type, entry_price, stop_loss, take_profit_1 } = opportunity;
   
   for (const point of priceHistory) {
@@ -70,12 +71,23 @@ function evaluateOutcome(
     }
   }
   
-  // If neither SL nor TP was hit, it expired
+  // Neither SL nor TP was hit
   const lastPrice = priceHistory[priceHistory.length - 1]?.close || entry_price;
+  
+  // If expired, mark as EXPIRED. If still active, return PENDING (no change needed yet)
+  if (isExpired) {
+    return { 
+      outcome: 'EXPIRED', 
+      outcomePrice: lastPrice, 
+      outcomeAt: new Date().toISOString() 
+    };
+  }
+  
+  // Still active and no SL/TP hit - return PENDING to skip processing
   return { 
-    outcome: 'EXPIRED', 
+    outcome: 'PENDING', 
     outcomePrice: lastPrice, 
-    outcomeAt: new Date().toISOString() 
+    outcomeAt: '' 
   };
 }
 
@@ -237,13 +249,14 @@ serve(async (req) => {
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Find expired opportunities that haven't been evaluated
+    // Find ALL opportunities that need evaluation (both active and expired)
+    // This includes ACTIVE ones that may have hit SL/TP
     const { data: pendingOpps, error: fetchError } = await supabase
       .from('trading_opportunities')
       .select('*')
       .is('outcome', null)
-      .lt('expires_at', new Date().toISOString())
-      .limit(10);
+      .in('status', ['ACTIVE', 'EXPIRED'])
+      .limit(20);
 
     if (fetchError) {
       console.error("Fetch error:", fetchError);
@@ -284,6 +297,9 @@ serve(async (req) => {
         continue;
       }
 
+      // Check if opportunity has expired
+      const isExpired = new Date(opp.expires_at) < new Date();
+      
       // Evaluate outcome
       const { outcome, outcomePrice, outcomeAt } = evaluateOutcome(
         opp as Opportunity,
@@ -292,8 +308,15 @@ serve(async (req) => {
           high: Number(p.high),
           low: Number(p.low),
           close: Number(p.close)
-        }))
+        })),
+        isExpired
       );
+
+      // Skip if still active and no SL/TP hit yet
+      if (outcome === 'PENDING') {
+        console.log(`Opportunity ${opp.id}: still PENDING (no SL/TP hit, not expired)`);
+        continue;
+      }
 
       console.log(`Opportunity ${opp.id}: ${outcome} at ${outcomePrice}`);
 
@@ -344,10 +367,13 @@ serve(async (req) => {
       // Generate learning using AI
       let learning: LearningResult;
       
+      // At this point, outcome is definitely WIN, LOSS, or EXPIRED (PENDING was skipped above)
+      const finalOutcome = outcome as 'WIN' | 'LOSS' | 'EXPIRED';
+      
       if (lovableApiKey) {
         learning = await generateLearning(
           opp as Opportunity, 
-          outcome, 
+          finalOutcome, 
           outcomePrice, 
           lovableApiKey,
           existingLearningsCount || 0
@@ -355,7 +381,7 @@ serve(async (req) => {
       } else {
         learning = createFallbackLearning(
           opp as Opportunity,
-          outcome,
+          finalOutcome,
           outcomePrice,
           Math.abs(outcomePrice - opp.entry_price) * 10000
         );
