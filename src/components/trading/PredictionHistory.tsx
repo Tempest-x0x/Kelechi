@@ -45,12 +45,12 @@ export const PredictionHistory = memo(function PredictionHistory({
   const pending = predictions.filter((p) => p.outcome === 'PENDING').length;
   const winRate = completedPredictions.length > 0 ? (wins / completedPredictions.length) * 100 : 0;
 
-  const signalIcons = {
+  const signalIcons: Record<string, typeof TrendingUp> = {
     BUY: TrendingUp,
     SELL: TrendingDown,
   };
 
-  const signalColors = {
+  const signalColors: Record<string, string> = {
     BUY: 'text-bullish',
     SELL: 'text-bearish',
   };
@@ -105,8 +105,8 @@ export const PredictionHistory = memo(function PredictionHistory({
 
       {/* History list */}
       <div className="space-y-2 max-h-[400px] overflow-y-auto scrollbar-thin">
-        {predictions.map((prediction) => {
-          const SignalIcon = signalIcons[prediction.signal_type];
+        {predictions.filter(p => p.signal_type === 'BUY' || p.signal_type === 'SELL').map((prediction) => {
+          const SignalIcon = signalIcons[prediction.signal_type] || TrendingUp;
           const outcomeKey = prediction.outcome || 'PENDING';
           const OutcomeIcon = outcomeIcons[outcomeKey] || Hourglass;
 
