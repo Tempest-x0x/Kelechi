@@ -82,18 +82,18 @@ export function useForexData(timeframe: Timeframe = '1h') {
     fetchData();
   }, [fetchData]);
 
-  // Auto-refresh (slower on higher timeframes to reduce API usage)
+  // Auto-refresh (much slower to conserve API credits - backend cron handles updates)
   useEffect(() => {
     const refreshMsByTimeframe: Record<Timeframe, number> = {
-      '1min': 30_000,
-      '5min': 60_000,
-      '15min': 120_000,
-      '30min': 300_000,
-      '1h': 300_000,
-      '4h': 900_000,
+      '1min': 120_000,     // 2 minutes (was 30s)
+      '5min': 300_000,     // 5 minutes (was 1min)
+      '15min': 600_000,    // 10 minutes (was 2min)
+      '30min': 900_000,    // 15 minutes (was 5min)
+      '1h': 1_800_000,     // 30 minutes (was 5min)
+      '4h': 3_600_000,     // 1 hour (was 15min)
     };
 
-    const interval = setInterval(fetchData, refreshMsByTimeframe[timeframe] ?? 300_000);
+    const interval = setInterval(fetchData, refreshMsByTimeframe[timeframe] ?? 1_800_000);
     return () => clearInterval(interval);
   }, [fetchData, timeframe]);
 

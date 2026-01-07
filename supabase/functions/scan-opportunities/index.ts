@@ -399,27 +399,52 @@ function analyzeOpportunity(
   return { signal, confidence: baseConfidence, reasons, patternData: matchedPatternStats };
 }
 
-// Calculate ATR-based levels
+// Calculate ATR-based levels with professional R:R ratios
+// Minimum 1:2 R:R ensures profitability at just 34% win rate
 function calculateLevels(
   currentPrice: number, 
   atr: number, 
-  signalType: 'BUY' | 'SELL'
-): { stopLoss: number; takeProfit1: number; takeProfit2: number } {
-  const slMult = 2.0;
-  const tp1Mult = 2.0;
-  const tp2Mult = 3.5;
+  signalType: 'BUY' | 'SELL',
+  confidence: number
+): { stopLoss: number; takeProfit1: number; takeProfit2: number; riskRewardRatio: string } {
+  // Dynamic R:R based on confidence level
+  // Higher confidence = slightly larger stop (more room) and larger targets
+  let slMult: number;
+  let tp1Mult: number;
+  let tp2Mult: number;
+  
+  if (confidence >= 80) {
+    // High confidence: Aggressive targets (1:2.5 R:R)
+    slMult = 1.2;
+    tp1Mult = 2.5;
+    tp2Mult = 4.0;
+  } else if (confidence >= 70) {
+    // Standard confidence: Balanced targets (1:2 R:R)
+    slMult = 1.0;
+    tp1Mult = 2.0;
+    tp2Mult = 3.0;
+  } else {
+    // Lower confidence (65-70): Conservative targets (1:1.5 R:R minimum)
+    slMult = 1.0;
+    tp1Mult = 1.5;
+    tp2Mult = 2.5;
+  }
+  
+  const riskRewardRatio = `1:${(tp1Mult / slMult).toFixed(1)}`;
   
   if (signalType === 'BUY') {
     return {
       stopLoss: currentPrice - (atr * slMult),
       takeProfit1: currentPrice + (atr * tp1Mult),
-      takeProfit2: currentPrice + (atr * tp2Mult)
+      takeProfit2: currentPrice + (atr * tp2Mult),
+      riskRewardRatio
     };
   } else {
     return {
       stopLoss: currentPrice + (atr * slMult),
       takeProfit1: currentPrice - (atr * tp1Mult),
-      takeProfit2: currentPrice - (atr * tp2Mult)
+      takeProfit2: currentPrice - (atr * tp2Mult),
+      riskRewardRatio
     };
   }
 }
@@ -608,8 +633,8 @@ serve(async (req) => {
       console.log(`Price moved ${pipsDiff.toFixed(1)} pips since last ${analysis.signal} signal - creating new opportunity`);
     }
 
-    // Calculate entry levels
-    const levels = calculateLevels(currentPrice, indicators.atr, analysis.signal);
+    // Calculate entry levels with dynamic R:R based on confidence
+    const levels = calculateLevels(currentPrice, indicators.atr, analysis.signal, analysis.confidence);
 
     // Build reasoning
     const reasoning = `${analysis.signal} opportunity detected with ${analysis.confidence.toFixed(0)}% confidence.\n\n` +

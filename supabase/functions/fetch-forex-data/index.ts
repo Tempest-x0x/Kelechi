@@ -85,6 +85,45 @@ function cacheFreshnessMs(timeframe: string) {
   return ms[timeframe] ?? 600_000;
 }
 
+// API Key Rotation System
+function getApiKeys(): string[] {
+  // First try the multi-key secret (comma-separated)
+  const multiKeys = Deno.env.get("TWELVE_DATA_API_KEYS");
+  if (multiKeys) {
+    const keys = multiKeys.split(",").map(k => k.trim()).filter(k => k.length > 0);
+    if (keys.length > 0) {
+      console.log(`Loaded ${keys.length} API keys from TWELVE_DATA_API_KEYS`);
+      return keys;
+    }
+  }
+  
+  // Fallback to single key
+  const singleKey = Deno.env.get("TWELVE_DATA_API_KEY");
+  if (singleKey) {
+    console.log("Using single API key from TWELVE_DATA_API_KEY");
+    return [singleKey];
+  }
+  
+  return [];
+}
+
+// Rotate keys based on hour + attempt number to distribute load
+function selectApiKey(keys: string[], attempt: number = 0): { key: string; index: number } {
+  if (keys.length === 0) {
+    throw new Error("No API keys available");
+  }
+  
+  // Use current hour as base index for round-robin across the day
+  const hour = new Date().getUTCHours();
+  const minute = new Date().getUTCMinutes();
+  
+  // Rotate every 5 minutes within each hour, plus attempt offset for retries
+  const rotationSlot = Math.floor(minute / 5);
+  const index = (hour * 12 + rotationSlot + attempt) % keys.length;
+  
+  return { key: keys[index], index };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -145,6 +184,50 @@ serve(async (req) => {
     return Number.isFinite(d.getTime()) ? d : null;
   };
 
+  // Fetch with retry using different API keys
+  const fetchWithKeyRotation = async (
+    interval: string, 
+    outputsize: number, 
+    keys: string[]
+  ): Promise<{ data: any; keyIndex: number } | { error: string; isQuotaError: boolean }> => {
+    const maxAttempts = Math.min(keys.length, 3); // Try up to 3 different keys
+    
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const { key, index } = selectApiKey(keys, attempt);
+      console.log(`API attempt ${attempt + 1}/${maxAttempts} using key index ${index}`);
+      
+      try {
+        const url = `https://api.twelvedata.com/time_series?symbol=EUR/USD&interval=${interval}&outputsize=${outputsize}&apikey=${key}`;
+        const response = await fetch(url);
+        const data = await response.json().catch(() => ({}));
+        
+        if (!response.ok || data?.status === "error") {
+          const message = String(data?.message || `Twelve Data request failed (status ${response.status})`);
+          console.error(`Key ${index} error:`, message);
+          
+          // If quota error, try next key
+          if (isTwelveDataQuotaError(message)) {
+            console.log(`Key ${index} quota exceeded, trying next key...`);
+            continue;
+          }
+          
+          // Non-quota error, return immediately
+          return { error: message, isQuotaError: false };
+        }
+        
+        // Success!
+        console.log(`Successfully fetched with key index ${index}`);
+        return { data, keyIndex: index };
+      } catch (err) {
+        console.error(`Key ${index} fetch error:`, err);
+        continue;
+      }
+    }
+    
+    // All keys exhausted
+    return { error: "All API keys exhausted or quota exceeded", isQuotaError: true };
+  };
+
   try {
     const body = await req.json().catch(() => ({}));
     const timeframeRaw = (body?.timeframe ?? "1h") as Timeframe;
@@ -166,9 +249,9 @@ serve(async (req) => {
       }
     }
 
-    const TWELVE_DATA_API_KEY = Deno.env.get("TWELVE_DATA_API_KEY");
-    if (!TWELVE_DATA_API_KEY) {
-      // If API key missing, try cache anyway.
+    const apiKeys = getApiKeys();
+    if (apiKeys.length === 0) {
+      // If API keys missing, try cache anyway.
       const cached = await readCache(normalizedTimeframe, "API key missing; serving cache");
       if (cached) {
         return new Response(JSON.stringify(cached), {
@@ -176,26 +259,23 @@ serve(async (req) => {
         });
       }
       return new Response(
-        JSON.stringify({ success: false, error: "TWELVE_DATA_API_KEY is not configured" }),
+        JSON.stringify({ success: false, error: "No API keys configured (TWELVE_DATA_API_KEYS or TWELVE_DATA_API_KEY)" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
     console.log(
-      `Fetching EUR/USD data with timeframe: ${normalizedTimeframe} (interval ${interval}), outputsize: ${outputsize}`,
+      `Fetching EUR/USD data with timeframe: ${normalizedTimeframe} (interval ${interval}), outputsize: ${outputsize}, keys available: ${apiKeys.length}`,
     );
 
-    const url = `https://api.twelvedata.com/time_series?symbol=EUR/USD&interval=${interval}&outputsize=${outputsize}&apikey=${TWELVE_DATA_API_KEY}`;
-    const response = await fetch(url);
-    const data = await response.json().catch(() => ({}));
+    const fetchResult = await fetchWithKeyRotation(interval, outputsize, apiKeys);
+    
+    if ('error' in fetchResult) {
+      console.error("Twelve Data API error:", fetchResult.error);
 
-    if (!response.ok || data?.status === "error") {
-      const message = String(data?.message || `Twelve Data request failed (status ${response.status})`);
-      console.error("Twelve Data API error:", message);
-
-      // 2) If quota/rate-limited, serve cached data instead of returning 500
-      if (isTwelveDataQuotaError(message)) {
-        const cached = (await readCache(normalizedTimeframe, message)) ?? (await readCache("1h", message));
+      // If quota/rate-limited, serve cached data instead of returning 500
+      if (fetchResult.isQuotaError) {
+        const cached = (await readCache(normalizedTimeframe, fetchResult.error)) ?? (await readCache("1h", fetchResult.error));
         if (cached) {
           return new Response(JSON.stringify(cached), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -206,15 +286,15 @@ serve(async (req) => {
         return new Response(
           JSON.stringify({
             success: false,
-            error: message,
+            error: fetchResult.error,
             quotaExceeded: true,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
 
-      // 3) Other API errors: attempt cache fallback, otherwise return 200 with error
-      const cached = (await readCache(normalizedTimeframe, message)) ?? (await readCache("1h", message));
+      // Other API errors: attempt cache fallback, otherwise return 200 with error
+      const cached = (await readCache(normalizedTimeframe, fetchResult.error)) ?? (await readCache("1h", fetchResult.error));
       if (cached) {
         return new Response(JSON.stringify(cached), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -224,11 +304,13 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: false,
-          error: message,
+          error: fetchResult.error,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
+
+    const data = fetchResult.data;
 
     if (!data?.values || !Array.isArray(data.values)) {
       console.error("Unexpected response format:", data);
@@ -247,7 +329,7 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Received ${data.values.length} candles from Twelve Data`);
+    console.log(`Received ${data.values.length} candles from Twelve Data (key ${fetchResult.keyIndex})`);
 
     const candles = data.values
       .map((candle: any) => ({
@@ -288,7 +370,7 @@ serve(async (req) => {
         currentPrice,
         candles,
         candleCount: candles.length,
-        meta: { ...data.meta, source: "twelvedata" },
+        meta: { ...data.meta, source: "twelvedata", keyIndex: fetchResult.keyIndex },
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
