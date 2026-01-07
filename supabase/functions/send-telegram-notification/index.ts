@@ -9,6 +9,7 @@ const corsHeaders = {
 };
 
 interface OpportunityNotification {
+  type: 'signal';
   signal_type: 'BUY' | 'SELL';
   confidence: number;
   entry_price: number;
@@ -22,6 +23,123 @@ interface OpportunityNotification {
     confidence: number;
     created_at: string;
   };
+}
+
+interface OutcomeNotification {
+  type: 'outcome';
+  signal_type: 'BUY' | 'SELL';
+  outcome: 'WIN' | 'LOSS' | 'EXPIRED';
+  confidence: number;
+  entry_price: number;
+  outcome_price: number;
+  stop_loss: number | null;
+  take_profit_1: number | null;
+  created_at: string;
+}
+
+type TelegramNotification = OpportunityNotification | OutcomeNotification;
+
+function formatSignalMessage(opportunity: OpportunityNotification): string {
+  const emoji = opportunity.signal_type === 'BUY' ? '🟢' : '🔴';
+  const arrow = opportunity.signal_type === 'BUY' ? '⬆️' : '⬇️';
+  
+  let reversalHeader = '';
+  if (opportunity.is_reversal && opportunity.previous_signal) {
+    const prevEmoji = opportunity.previous_signal.signal_type === 'BUY' ? '🟢' : '🔴';
+    reversalHeader = `⚠️ *SIGNAL REVERSAL*
+
+Previous ${prevEmoji} ${opportunity.previous_signal.signal_type} signal (${opportunity.previous_signal.confidence.toFixed(0)}%) has been superseded.
+
+`;
+  }
+  
+  return `
+${reversalHeader}${emoji} *NEW ${opportunity.signal_type} SIGNAL* ${arrow}
+
+📊 *EUR/USD*
+💯 Confidence: ${opportunity.confidence.toFixed(0)}%
+
+📍 Entry: ${opportunity.entry_price.toFixed(5)}
+🛑 Stop Loss: ${opportunity.stop_loss.toFixed(5)}
+🎯 TP1: ${opportunity.take_profit_1.toFixed(5)}
+🎯 TP2: ${opportunity.take_profit_2.toFixed(5)}
+
+📝 ${opportunity.reasoning?.split('\n')[0] || 'Technical signal detected'}
+
+⏰ ${new Date().toLocaleString('en-US', { timeZone: 'UTC' })} UTC
+
+_ForexTell AI - Not financial advice_
+  `.trim();
+}
+
+function formatOutcomeMessage(notification: OutcomeNotification): string {
+  const { signal_type, outcome, confidence, entry_price, outcome_price, created_at } = notification;
+  
+  const pipsMove = Math.abs(outcome_price - entry_price) * 10000;
+  const isProfit = (signal_type === 'BUY' && outcome_price > entry_price) || 
+                   (signal_type === 'SELL' && outcome_price < entry_price);
+  
+  // Calculate duration
+  const startTime = new Date(created_at);
+  const endTime = new Date();
+  const durationMs = endTime.getTime() - startTime.getTime();
+  const hours = Math.floor(durationMs / (1000 * 60 * 60));
+  const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+  const durationStr = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+  
+  const signalEmoji = signal_type === 'BUY' ? '🟢' : '🔴';
+  
+  if (outcome === 'WIN') {
+    return `
+✅ *SIGNAL RESULT: WIN* 🎯
+
+📊 EUR/USD ${signalEmoji} ${signal_type}
+💯 Confidence: ${confidence.toFixed(0)}%
+
+📍 Entry: ${entry_price.toFixed(5)}
+🎯 TP Hit: ${outcome_price.toFixed(5)}
+📈 +${pipsMove.toFixed(1)} pips profit
+
+⏱️ Duration: ${durationStr}
+⏰ ${new Date().toLocaleString('en-US', { timeZone: 'UTC' })} UTC
+
+_ForexTell AI - Trade closed successfully_
+    `.trim();
+  } else if (outcome === 'LOSS') {
+    return `
+❌ *SIGNAL RESULT: LOSS* 🛑
+
+📊 EUR/USD ${signalEmoji} ${signal_type}
+💯 Confidence: ${confidence.toFixed(0)}%
+
+📍 Entry: ${entry_price.toFixed(5)}
+🛑 SL Hit: ${outcome_price.toFixed(5)}
+📉 -${pipsMove.toFixed(1)} pips loss
+
+⏱️ Duration: ${durationStr}
+⏰ ${new Date().toLocaleString('en-US', { timeZone: 'UTC' })} UTC
+
+_ForexTell AI - Stop loss triggered_
+    `.trim();
+  } else {
+    // EXPIRED
+    const pipsDisplay = isProfit ? `+${pipsMove.toFixed(1)}` : `-${pipsMove.toFixed(1)}`;
+    return `
+⏳ *SIGNAL EXPIRED*
+
+📊 EUR/USD ${signalEmoji} ${signal_type}
+💯 Confidence: ${confidence.toFixed(0)}%
+
+📍 Entry: ${entry_price.toFixed(5)}
+📍 Exit: ${outcome_price.toFixed(5)}
+${isProfit ? '📈' : '📉'} ${pipsDisplay} pips (unrealized)
+
+⏱️ Duration: ${durationStr} (expired)
+⏰ ${new Date().toLocaleString('en-US', { timeZone: 'UTC' })} UTC
+
+_ForexTell AI - Signal expired without hitting SL/TP_
+    `.trim();
+  }
 }
 
 serve(async (req) => {
@@ -38,40 +156,20 @@ serve(async (req) => {
       );
     }
 
-    const opportunity: OpportunityNotification = await req.json();
-    console.log("Sending Telegram notification for:", opportunity.signal_type, opportunity.is_reversal ? "(REVERSAL)" : "");
+    const payload: TelegramNotification = await req.json();
     
-    const emoji = opportunity.signal_type === 'BUY' ? '🟢' : '🔴';
-    const arrow = opportunity.signal_type === 'BUY' ? '⬆️' : '⬇️';
+    let message: string;
     
-    // Build reversal header if applicable
-    let reversalHeader = '';
-    if (opportunity.is_reversal && opportunity.previous_signal) {
-      const prevEmoji = opportunity.previous_signal.signal_type === 'BUY' ? '🟢' : '🔴';
-      reversalHeader = `⚠️ *SIGNAL REVERSAL*
-
-Previous ${prevEmoji} ${opportunity.previous_signal.signal_type} signal (${opportunity.previous_signal.confidence.toFixed(0)}%) has been superseded.
-
-`;
+    // Determine notification type and format message accordingly
+    if (payload.type === 'outcome') {
+      console.log("Sending Telegram outcome notification:", payload.outcome, payload.signal_type);
+      message = formatOutcomeMessage(payload as OutcomeNotification);
+    } else {
+      // Default to signal notification (for backwards compatibility)
+      const signalPayload = payload as OpportunityNotification;
+      console.log("Sending Telegram signal notification:", signalPayload.signal_type, signalPayload.is_reversal ? "(REVERSAL)" : "");
+      message = formatSignalMessage(signalPayload);
     }
-    
-    const message = `
-${reversalHeader}${emoji} *NEW ${opportunity.signal_type} SIGNAL* ${arrow}
-
-📊 *EUR/USD*
-💯 Confidence: ${opportunity.confidence.toFixed(0)}%
-
-📍 Entry: ${opportunity.entry_price.toFixed(5)}
-🛑 Stop Loss: ${opportunity.stop_loss.toFixed(5)}
-🎯 TP1: ${opportunity.take_profit_1.toFixed(5)}
-🎯 TP2: ${opportunity.take_profit_2.toFixed(5)}
-
-📝 ${opportunity.reasoning?.split('\n')[0] || 'Technical signal detected'}
-
-⏰ ${new Date().toLocaleString('en-US', { timeZone: 'UTC' })} UTC
-
-_ForexTell AI - Not financial advice_
-    `.trim();
 
     const response = await fetch(
       `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
