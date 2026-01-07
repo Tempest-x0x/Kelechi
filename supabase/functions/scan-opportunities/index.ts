@@ -272,131 +272,307 @@ function calculateIndicators(candles: Candle[]): TechnicalIndicators {
   };
 }
 
-// Analyze opportunity with pattern stats
+// Pattern Tier System based on 25 years historical data
+// Tier 1: Proven winners (>52% win rate) - Required for signals
+// Tier 2: Neutral (50-52%) - Standard weight  
+// Tier 3: Weak (<50%) - Reduced weight
+// Tier 4: Actively harmful (<47%) - Penalize
+const PATTERN_WEIGHTS = {
+  // Tier 1: Proven winners
+  rsi_oversold: { weight: 1.5, tier: 1, expectedWinRate: 52.4 },
+  rsi_overbought: { weight: 1.5, tier: 1, expectedWinRate: 52.16 },
+  bb_lower_touch: { weight: 1.3, tier: 1, expectedWinRate: 52.06 },
+  bb_upper_touch: { weight: 1.3, tier: 1, expectedWinRate: 51.67 },
+  
+  // Tier 2: Neutral
+  stochastic_oversold: { weight: 1.0, tier: 2, expectedWinRate: 50 },
+  stochastic_overbought: { weight: 1.0, tier: 2, expectedWinRate: 50 },
+  
+  // Tier 3: Weak edge
+  macd_bullish_cross: { weight: 0.5, tier: 3, expectedWinRate: 47.85 },
+  macd_bearish_cross: { weight: 0.5, tier: 3, expectedWinRate: 47.39 },
+  bullish_engulfing: { weight: 0.5, tier: 3, expectedWinRate: 48.39 },
+  bearish_engulfing: { weight: 0.5, tier: 3, expectedWinRate: 48.24 },
+  
+  // Tier 4: Actively harmful - penalize
+  golden_cross: { weight: -0.5, tier: 4, expectedWinRate: 45.89 },
+  death_cross: { weight: -0.5, tier: 4, expectedWinRate: 45.87 },
+} as const;
+
+type PatternName = keyof typeof PATTERN_WEIGHTS;
+
+interface PatternDetection {
+  name: PatternName;
+  type: 'BUY' | 'SELL';
+  tier: number;
+  weight: number;
+  reason: string;
+}
+
+// Analyze opportunity with pattern stats and tier-based weighting
 function analyzeOpportunity(
   indicators: TechnicalIndicators,
   patterns: string[],
   currentPrice: number,
   patternStats: any[]
 ): { signal: 'BUY' | 'SELL' | null; confidence: number; reasons: string[]; patternData: any[] } {
-  const buyReasons: string[] = [];
-  const sellReasons: string[] = [];
+  const buyPatterns: PatternDetection[] = [];
+  const sellPatterns: PatternDetection[] = [];
   const matchedPatternStats: any[] = [];
   
-  // RSI
+  // Detect patterns and classify by tier
+  
+  // RSI - Tier 1
   if (indicators.rsi < 30) {
-    buyReasons.push('RSI oversold (<30)');
+    buyPatterns.push({ 
+      name: 'rsi_oversold', 
+      type: 'BUY', 
+      tier: 1, 
+      weight: PATTERN_WEIGHTS.rsi_oversold.weight,
+      reason: 'RSI oversold (<30) - Tier 1 signal'
+    });
     const stat = patternStats.find(p => p.pattern_name === 'rsi_oversold');
     if (stat) matchedPatternStats.push(stat);
   } else if (indicators.rsi < 40) {
-    buyReasons.push('RSI approaching oversold');
+    buyPatterns.push({ 
+      name: 'rsi_oversold', 
+      type: 'BUY', 
+      tier: 2, 
+      weight: 0.5,
+      reason: 'RSI approaching oversold (30-40)'
+    });
   }
   
   if (indicators.rsi > 70) {
-    sellReasons.push('RSI overbought (>70)');
+    sellPatterns.push({ 
+      name: 'rsi_overbought', 
+      type: 'SELL', 
+      tier: 1, 
+      weight: PATTERN_WEIGHTS.rsi_overbought.weight,
+      reason: 'RSI overbought (>70) - Tier 1 signal'
+    });
     const stat = patternStats.find(p => p.pattern_name === 'rsi_overbought');
     if (stat) matchedPatternStats.push(stat);
   } else if (indicators.rsi > 60) {
-    sellReasons.push('RSI approaching overbought');
+    sellPatterns.push({ 
+      name: 'rsi_overbought', 
+      type: 'SELL', 
+      tier: 2, 
+      weight: 0.5,
+      reason: 'RSI approaching overbought (60-70)'
+    });
   }
   
-  // MACD
-  if (indicators.macd.histogram > 0 && indicators.macd.value > indicators.macd.signal) {
-    buyReasons.push('MACD bullish crossover');
-    const stat = patternStats.find(p => p.pattern_name === 'macd_bullish_cross');
-    if (stat) matchedPatternStats.push(stat);
-  }
-  if (indicators.macd.histogram < 0 && indicators.macd.value < indicators.macd.signal) {
-    sellReasons.push('MACD bearish crossover');
-    const stat = patternStats.find(p => p.pattern_name === 'macd_bearish_cross');
-    if (stat) matchedPatternStats.push(stat);
-  }
-  
-  // Bollinger Bands
+  // Bollinger Bands - Tier 1
   if (currentPrice < indicators.bollingerBands.lower) {
-    buyReasons.push('Price below lower Bollinger Band');
+    buyPatterns.push({ 
+      name: 'bb_lower_touch', 
+      type: 'BUY', 
+      tier: 1, 
+      weight: PATTERN_WEIGHTS.bb_lower_touch.weight,
+      reason: 'Price below lower Bollinger Band - Tier 1 signal'
+    });
     const stat = patternStats.find(p => p.pattern_name === 'bb_lower_touch');
     if (stat) matchedPatternStats.push(stat);
   }
+  
   if (currentPrice > indicators.bollingerBands.upper) {
-    sellReasons.push('Price above upper Bollinger Band');
+    sellPatterns.push({ 
+      name: 'bb_upper_touch', 
+      type: 'SELL', 
+      tier: 1, 
+      weight: PATTERN_WEIGHTS.bb_upper_touch.weight,
+      reason: 'Price above upper Bollinger Band - Tier 1 signal'
+    });
     const stat = patternStats.find(p => p.pattern_name === 'bb_upper_touch');
     if (stat) matchedPatternStats.push(stat);
   }
   
-  // Stochastic
+  // Stochastic - Tier 2
   if (indicators.stochastic.k < 20 && indicators.stochastic.d < 20) {
-    buyReasons.push('Stochastic deeply oversold');
-  }
-  if (indicators.stochastic.k > 80 && indicators.stochastic.d > 80) {
-    sellReasons.push('Stochastic deeply overbought');
+    buyPatterns.push({ 
+      name: 'stochastic_oversold', 
+      type: 'BUY', 
+      tier: 2, 
+      weight: PATTERN_WEIGHTS.stochastic_oversold.weight,
+      reason: 'Stochastic deeply oversold (<20)'
+    });
   }
   
-  // EMA alignment
+  if (indicators.stochastic.k > 80 && indicators.stochastic.d > 80) {
+    sellPatterns.push({ 
+      name: 'stochastic_overbought', 
+      type: 'SELL', 
+      tier: 2, 
+      weight: PATTERN_WEIGHTS.stochastic_overbought.weight,
+      reason: 'Stochastic deeply overbought (>80)'
+    });
+  }
+  
+  // MACD - Tier 3 (weak signals, low weight)
+  if (indicators.macd.histogram > 0 && indicators.macd.value > indicators.macd.signal) {
+    buyPatterns.push({ 
+      name: 'macd_bullish_cross', 
+      type: 'BUY', 
+      tier: 3, 
+      weight: PATTERN_WEIGHTS.macd_bullish_cross.weight,
+      reason: 'MACD bullish crossover - Tier 3 (weak)'
+    });
+    const stat = patternStats.find(p => p.pattern_name === 'macd_bullish_cross');
+    if (stat) matchedPatternStats.push(stat);
+  }
+  
+  if (indicators.macd.histogram < 0 && indicators.macd.value < indicators.macd.signal) {
+    sellPatterns.push({ 
+      name: 'macd_bearish_cross', 
+      type: 'SELL', 
+      tier: 3, 
+      weight: PATTERN_WEIGHTS.macd_bearish_cross.weight,
+      reason: 'MACD bearish crossover - Tier 3 (weak)'
+    });
+    const stat = patternStats.find(p => p.pattern_name === 'macd_bearish_cross');
+    if (stat) matchedPatternStats.push(stat);
+  }
+  
+  // EMA alignment - Tier 4 (actively harmful based on historical data)
   const priceAboveEma21 = currentPrice > indicators.ema21;
   const priceAboveEma50 = currentPrice > indicators.ema50;
   const ema21AboveEma50 = indicators.ema21 > indicators.ema50;
   
   if (priceAboveEma21 && priceAboveEma50 && ema21AboveEma50) {
-    buyReasons.push('Strong bullish EMA alignment');
+    // This is golden cross - historically harmful, penalize
+    buyPatterns.push({ 
+      name: 'golden_cross', 
+      type: 'BUY', 
+      tier: 4, 
+      weight: PATTERN_WEIGHTS.golden_cross.weight,
+      reason: 'Golden Cross alignment - Tier 4 (historically <46% win rate)'
+    });
     const stat = patternStats.find(p => p.pattern_name === 'golden_cross');
     if (stat) matchedPatternStats.push(stat);
   } else if (!priceAboveEma21 && !priceAboveEma50 && !ema21AboveEma50) {
-    sellReasons.push('Strong bearish EMA alignment');
+    // Death cross - historically harmful, penalize
+    sellPatterns.push({ 
+      name: 'death_cross', 
+      type: 'SELL', 
+      tier: 4, 
+      weight: PATTERN_WEIGHTS.death_cross.weight,
+      reason: 'Death Cross alignment - Tier 4 (historically <46% win rate)'
+    });
     const stat = patternStats.find(p => p.pattern_name === 'death_cross');
     if (stat) matchedPatternStats.push(stat);
   }
   
-  // Pattern analysis
+  // Candlestick patterns - Tier 3
   patterns.forEach(p => {
-    if (p.includes('Bullish')) {
-      buyReasons.push(p);
+    if (p.includes('Bullish') && p.includes('Engulfing')) {
+      buyPatterns.push({ 
+        name: 'bullish_engulfing', 
+        type: 'BUY', 
+        tier: 3, 
+        weight: PATTERN_WEIGHTS.bullish_engulfing.weight,
+        reason: 'Bullish Engulfing - Tier 3 (48% win rate)'
+      });
       const stat = patternStats.find(s => s.pattern_name === 'bullish_engulfing');
       if (stat && !matchedPatternStats.includes(stat)) matchedPatternStats.push(stat);
     }
-    if (p.includes('Bearish')) {
-      sellReasons.push(p);
+    if (p.includes('Bearish') && p.includes('Engulfing')) {
+      sellPatterns.push({ 
+        name: 'bearish_engulfing', 
+        type: 'SELL', 
+        tier: 3, 
+        weight: PATTERN_WEIGHTS.bearish_engulfing.weight,
+        reason: 'Bearish Engulfing - Tier 3 (48% win rate)'
+      });
       const stat = patternStats.find(s => s.pattern_name === 'bearish_engulfing');
       if (stat && !matchedPatternStats.includes(stat)) matchedPatternStats.push(stat);
     }
-    if (p.includes('Uptrend')) buyReasons.push(p);
-    if (p.includes('Downtrend')) sellReasons.push(p);
   });
   
-  // Decision logic: need 2+ reasons AND net advantage
-  const netBuyAdvantage = buyReasons.length - sellReasons.length;
-  const netSellAdvantage = sellReasons.length - buyReasons.length;
+  // Calculate weighted scores
+  const buyScore = buyPatterns.reduce((sum, p) => sum + p.weight, 0);
+  const sellScore = sellPatterns.reduce((sum, p) => sum + p.weight, 0);
   
-  // Calculate confidence based on reasons and pattern stats
-  let baseConfidence = 50;
+  // Count patterns by tier
+  const buyTier1Count = buyPatterns.filter(p => p.tier === 1).length;
+  const sellTier1Count = sellPatterns.filter(p => p.tier === 1).length;
+  const buyTier4Count = buyPatterns.filter(p => p.tier === 4).length;
+  const sellTier4Count = sellPatterns.filter(p => p.tier === 4).length;
+  
+  console.log(`Pattern analysis: BUY score=${buyScore.toFixed(2)} (${buyTier1Count} T1, ${buyTier4Count} T4), SELL score=${sellScore.toFixed(2)} (${sellTier1Count} T1, ${sellTier4Count} T4)`);
+  
+  // Decision logic:
+  // 1. REQUIRE at least one Tier 1 pattern
+  // 2. Weighted score must be positive and exceed threshold (1.5)
+  // 3. Must have net advantage over opposing side
+  
+  const SCORE_THRESHOLD = 1.5;
   let signal: 'BUY' | 'SELL' | null = null;
+  let confidence = 50;
   let reasons: string[] = [];
   
-  if (buyReasons.length >= 2 && netBuyAdvantage >= 1) {
+  const netBuyAdvantage = buyScore - sellScore;
+  const netSellAdvantage = sellScore - buyScore;
+  
+  if (buyTier1Count >= 1 && buyScore >= SCORE_THRESHOLD && netBuyAdvantage >= 0.5) {
     signal = 'BUY';
-    reasons = buyReasons;
-    baseConfidence = 55 + (buyReasons.length * 5) + (netBuyAdvantage * 3);
+    reasons = buyPatterns.map(p => p.reason);
     
-    // Boost or reduce based on pattern stats
-    const goodStats = matchedPatternStats.filter(s => s.signal_type === 'BUY' && s.win_rate_24h >= 51);
-    const badStats = matchedPatternStats.filter(s => s.signal_type === 'BUY' && s.win_rate_24h < 48);
-    baseConfidence += goodStats.length * 3;
-    baseConfidence -= badStats.length * 5;
-  } else if (sellReasons.length >= 2 && netSellAdvantage >= 1) {
+    // Confidence calculation based on tiers
+    confidence = 50 
+      + (buyTier1Count * 12)  // +12 per Tier 1 pattern
+      + (buyPatterns.filter(p => p.tier === 2).length * 5)   // +5 per Tier 2
+      + (buyPatterns.filter(p => p.tier === 3).length * 2)   // +2 per Tier 3
+      - (buyTier4Count * 10); // -10 per Tier 4 (penalty)
+    
+    // Combination bonuses
+    const hasRsiOversold = buyPatterns.some(p => p.name === 'rsi_oversold' && p.tier === 1);
+    const hasBbLower = buyPatterns.some(p => p.name === 'bb_lower_touch');
+    const hasStochOversold = buyPatterns.some(p => p.name === 'stochastic_oversold');
+    
+    if (hasRsiOversold && hasBbLower) {
+      confidence += 15;
+      reasons.push('✨ RSI + BB combo bonus (+15%)');
+    }
+    if (hasRsiOversold && hasStochOversold) {
+      confidence += 10;
+      reasons.push('✨ RSI + Stochastic combo bonus (+10%)');
+    }
+    
+  } else if (sellTier1Count >= 1 && sellScore >= SCORE_THRESHOLD && netSellAdvantage >= 0.5) {
     signal = 'SELL';
-    reasons = sellReasons;
-    baseConfidence = 55 + (sellReasons.length * 5) + (netSellAdvantage * 3);
+    reasons = sellPatterns.map(p => p.reason);
     
-    const goodStats = matchedPatternStats.filter(s => s.signal_type === 'SELL' && s.win_rate_24h >= 51);
-    const badStats = matchedPatternStats.filter(s => s.signal_type === 'SELL' && s.win_rate_24h < 48);
-    baseConfidence += goodStats.length * 3;
-    baseConfidence -= badStats.length * 5;
+    confidence = 50 
+      + (sellTier1Count * 12)
+      + (sellPatterns.filter(p => p.tier === 2).length * 5)
+      + (sellPatterns.filter(p => p.tier === 3).length * 2)
+      - (sellTier4Count * 10);
+    
+    // Combination bonuses
+    const hasRsiOverbought = sellPatterns.some(p => p.name === 'rsi_overbought' && p.tier === 1);
+    const hasBbUpper = sellPatterns.some(p => p.name === 'bb_upper_touch');
+    const hasStochOverbought = sellPatterns.some(p => p.name === 'stochastic_overbought');
+    
+    if (hasRsiOverbought && hasBbUpper) {
+      confidence += 15;
+      reasons.push('✨ RSI + BB combo bonus (+15%)');
+    }
+    if (hasRsiOverbought && hasStochOverbought) {
+      confidence += 10;
+      reasons.push('✨ RSI + Stochastic combo bonus (+10%)');
+    }
+  }
+  
+  // If no Tier 1 pattern, log why we're rejecting
+  if (!signal) {
+    console.log(`No signal: BUY T1=${buyTier1Count}, SELL T1=${sellTier1Count}, threshold=${SCORE_THRESHOLD}`);
   }
   
   // Clamp confidence
-  baseConfidence = Math.min(95, Math.max(0, baseConfidence));
+  confidence = Math.min(95, Math.max(0, confidence));
   
-  return { signal, confidence: baseConfidence, reasons, patternData: matchedPatternStats };
+  return { signal, confidence, reasons, patternData: matchedPatternStats };
 }
 
 // Calculate ATR-based levels with professional R:R ratios
@@ -535,11 +711,11 @@ serve(async (req) => {
       reasons: analysis.reasons.length
     });
 
-    // Only create opportunity if conditions are met
-    // - Signal is BUY or SELL (not null)
-    // - Confidence >= 65%
-    // - At least 2 confirming indicators
-    if (!analysis.signal || analysis.confidence < 65 || analysis.reasons.length < 2) {
+    // Only create opportunity if conditions are met (tier-based strategy)
+    // - Signal is BUY or SELL (requires Tier 1 pattern)
+    // - Confidence >= 60% (now enforced by tier system)
+    // - At least 2 confirming reasons
+    if (!analysis.signal || analysis.confidence < 60 || analysis.reasons.length < 2) {
       console.log("No high-probability opportunity detected");
       return new Response(
         JSON.stringify({ 

@@ -371,84 +371,107 @@ function calculateIndicators(candles: Candle[]): TechnicalIndicators {
   };
 }
 
-// Signal confirmation filters - determines if market conditions support a signal
+// Pattern Tier System based on 25 years historical data
+const PATTERN_WEIGHTS = {
+  // Tier 1: Proven winners (>52% win rate)
+  rsi_oversold: { weight: 1.5, tier: 1, expectedWinRate: 52.4 },
+  rsi_overbought: { weight: 1.5, tier: 1, expectedWinRate: 52.16 },
+  bb_lower_touch: { weight: 1.3, tier: 1, expectedWinRate: 52.06 },
+  bb_upper_touch: { weight: 1.3, tier: 1, expectedWinRate: 51.67 },
+  
+  // Tier 2: Neutral (50-52%)
+  stochastic_oversold: { weight: 1.0, tier: 2, expectedWinRate: 50 },
+  stochastic_overbought: { weight: 1.0, tier: 2, expectedWinRate: 50 },
+  
+  // Tier 3: Weak (<50%)
+  macd_bullish_cross: { weight: 0.5, tier: 3, expectedWinRate: 47.85 },
+  macd_bearish_cross: { weight: 0.5, tier: 3, expectedWinRate: 47.39 },
+  bullish_engulfing: { weight: 0.5, tier: 3, expectedWinRate: 48.39 },
+  bearish_engulfing: { weight: 0.5, tier: 3, expectedWinRate: 48.24 },
+  
+  // Tier 4: Harmful (<47%)
+  golden_cross: { weight: -0.5, tier: 4, expectedWinRate: 45.89 },
+  death_cross: { weight: -0.5, tier: 4, expectedWinRate: 45.87 },
+} as const;
+
+interface PatternTierInfo {
+  name: string;
+  tier: number;
+  weight: number;
+  reason: string;
+}
+
+// Signal confirmation filters with tier-based weighting
 function getSignalConfirmation(indicators: TechnicalIndicators, patterns: string[], currentPrice: number): SignalConfirmation {
   const buyReasons: string[] = [];
   const sellReasons: string[] = [];
   const conflicts: string[] = [];
   
-  // RSI analysis - only add to sides when there's clear signal
+  const buyPatterns: PatternTierInfo[] = [];
+  const sellPatterns: PatternTierInfo[] = [];
+  
+  // RSI - Tier 1
   if (indicators.rsi < 30) {
-    buyReasons.push('RSI oversold (<30) - strong buy signal');
+    buyReasons.push('RSI oversold (<30) - Tier 1 HIGH PROBABILITY');
+    buyPatterns.push({ name: 'rsi_oversold', tier: 1, weight: 1.5, reason: 'RSI oversold' });
   } else if (indicators.rsi < 40) {
     buyReasons.push('RSI approaching oversold (30-40)');
+    buyPatterns.push({ name: 'rsi_approaching', tier: 2, weight: 0.5, reason: 'RSI approaching oversold' });
   } else if (indicators.rsi > 70) {
-    sellReasons.push('RSI overbought (>70) - strong sell signal');
+    sellReasons.push('RSI overbought (>70) - Tier 1 HIGH PROBABILITY');
+    sellPatterns.push({ name: 'rsi_overbought', tier: 1, weight: 1.5, reason: 'RSI overbought' });
   } else if (indicators.rsi > 60) {
     sellReasons.push('RSI approaching overbought (60-70)');
-  }
-  // RSI 40-60 is neutral - don't add to either side
-  
-  // MACD analysis - more granular
-  if (indicators.macd.histogram > 0) {
-    if (indicators.macd.value > indicators.macd.signal) {
-      buyReasons.push('MACD bullish (histogram positive, above signal)');
-    } else {
-      buyReasons.push('MACD histogram positive');
-    }
-  } else if (indicators.macd.histogram < 0) {
-    if (indicators.macd.value < indicators.macd.signal) {
-      sellReasons.push('MACD bearish (histogram negative, below signal)');
-    } else {
-      sellReasons.push('MACD histogram negative');
-    }
+    sellPatterns.push({ name: 'rsi_approaching', tier: 2, weight: 0.5, reason: 'RSI approaching overbought' });
   }
   
-  // MACD crossover detection - only flag as conflict if very close
+  // Bollinger Bands - Tier 1
+  if (currentPrice < indicators.bollingerBands.lower) {
+    buyReasons.push('Price below lower Bollinger Band - Tier 1 HIGH PROBABILITY');
+    buyPatterns.push({ name: 'bb_lower_touch', tier: 1, weight: 1.3, reason: 'BB lower touch' });
+  } else if (currentPrice > indicators.bollingerBands.upper) {
+    sellReasons.push('Price above upper Bollinger Band - Tier 1 HIGH PROBABILITY');
+    sellPatterns.push({ name: 'bb_upper_touch', tier: 1, weight: 1.3, reason: 'BB upper touch' });
+  }
+  
+  // MACD - Tier 3 (weak, low weight)
+  if (indicators.macd.histogram > 0 && indicators.macd.value > indicators.macd.signal) {
+    buyReasons.push('MACD bullish - Tier 3 (weak edge)');
+    buyPatterns.push({ name: 'macd_bullish_cross', tier: 3, weight: 0.5, reason: 'MACD bullish' });
+  } else if (indicators.macd.histogram < 0 && indicators.macd.value < indicators.macd.signal) {
+    sellReasons.push('MACD bearish - Tier 3 (weak edge)');
+    sellPatterns.push({ name: 'macd_bearish_cross', tier: 3, weight: 0.5, reason: 'MACD bearish' });
+  }
+  
+  // MACD near crossover - only flag if very close
   if (Math.abs(indicators.macd.histogram) < 0.00002) {
     conflicts.push('MACD near crossover');
   }
   
-  // EMA alignment - more flexible
+  // EMA alignment - Tier 4 (harmful based on historical data!)
   const ema21AboveEma50 = indicators.ema21 > indicators.ema50;
   const priceAboveEma21 = currentPrice > indicators.ema21;
   const priceAboveEma50 = currentPrice > indicators.ema50;
   
   if (priceAboveEma21 && priceAboveEma50 && ema21AboveEma50) {
-    buyReasons.push('Strong bullish EMA alignment (price > EMA21 > EMA50)');
-  } else if (priceAboveEma21 && priceAboveEma50) {
-    buyReasons.push('Price above both EMAs');
+    // Golden cross is historically harmful - add as negative signal
+    buyReasons.push('Golden Cross - Tier 4 ⚠️ (historically <46% win rate)');
+    buyPatterns.push({ name: 'golden_cross', tier: 4, weight: -0.5, reason: 'Golden cross - contrarian' });
   } else if (!priceAboveEma21 && !priceAboveEma50 && !ema21AboveEma50) {
-    sellReasons.push('Strong bearish EMA alignment (price < EMA21 < EMA50)');
-  } else if (!priceAboveEma21 && !priceAboveEma50) {
-    sellReasons.push('Price below both EMAs');
-  }
-  // Mixed EMA is no longer a conflict - just don't add signal
-  
-  // Bollinger Bands
-  const bbMiddle = indicators.bollingerBands.middle;
-  if (currentPrice < indicators.bollingerBands.lower) {
-    buyReasons.push('Price below lower Bollinger Band (oversold)');
-  } else if (currentPrice < bbMiddle && currentPrice > indicators.bollingerBands.lower) {
-    buyReasons.push('Price in lower Bollinger Band zone');
-  } else if (currentPrice > indicators.bollingerBands.upper) {
-    sellReasons.push('Price above upper Bollinger Band (overbought)');
-  } else if (currentPrice > bbMiddle && currentPrice < indicators.bollingerBands.upper) {
-    sellReasons.push('Price in upper Bollinger Band zone');
+    sellReasons.push('Death Cross - Tier 4 ⚠️ (historically <46% win rate)');
+    sellPatterns.push({ name: 'death_cross', tier: 4, weight: -0.5, reason: 'Death cross - contrarian' });
   }
   
-  // Stochastic - more granular
+  // Stochastic - Tier 2
   if (indicators.stochastic.k < 20 && indicators.stochastic.d < 20) {
     buyReasons.push('Stochastic deeply oversold (<20)');
-  } else if (indicators.stochastic.k < 30) {
-    buyReasons.push('Stochastic approaching oversold');
+    buyPatterns.push({ name: 'stochastic_oversold', tier: 2, weight: 1.0, reason: 'Stochastic oversold' });
   } else if (indicators.stochastic.k > 80 && indicators.stochastic.d > 80) {
     sellReasons.push('Stochastic deeply overbought (>80)');
-  } else if (indicators.stochastic.k > 70) {
-    sellReasons.push('Stochastic approaching overbought');
+    sellPatterns.push({ name: 'stochastic_overbought', tier: 2, weight: 1.0, reason: 'Stochastic overbought' });
   }
   
-  // Pattern analysis
+  // Pattern analysis - Tier 3
   const bullishPatterns = patterns.filter(p => 
     p.includes('Bullish') || p.includes('Uptrend') || p.includes('Higher Highs') || p.includes('Support')
   );
@@ -457,26 +480,36 @@ function getSignalConfirmation(indicators: TechnicalIndicators, patterns: string
   );
   
   if (bullishPatterns.length > 0) {
-    buyReasons.push(`Bullish patterns detected: ${bullishPatterns.length}`);
+    buyReasons.push(`Bullish patterns detected: ${bullishPatterns.length} - Tier 3`);
+    buyPatterns.push({ name: 'bullish_patterns', tier: 3, weight: 0.5, reason: 'Bullish patterns' });
   }
   if (bearishPatterns.length > 0) {
-    sellReasons.push(`Bearish patterns detected: ${bearishPatterns.length}`);
+    sellReasons.push(`Bearish patterns detected: ${bearishPatterns.length} - Tier 3`);
+    sellPatterns.push({ name: 'bearish_patterns', tier: 3, weight: 0.5, reason: 'Bearish patterns' });
   }
   
-  // Only flag as conflict if both pattern types are strong (2+ each)
   if (bullishPatterns.length >= 2 && bearishPatterns.length >= 2) {
     conflicts.push('Strong conflicting patterns detected');
   }
   
-  // Determine if we can trade - net advantage approach
-  // Need 2+ reasons AND net advantage of at least 1 over opposing side
-  const netBuyAdvantage = buyReasons.length - sellReasons.length;
-  const netSellAdvantage = sellReasons.length - buyReasons.length;
+  // Calculate weighted scores
+  const buyScore = buyPatterns.reduce((sum, p) => sum + p.weight, 0);
+  const sellScore = sellPatterns.reduce((sum, p) => sum + p.weight, 0);
   
-  const canBuy = buyReasons.length >= 2 && netBuyAdvantage >= 1 && conflicts.length <= 2;
-  const canSell = sellReasons.length >= 2 && netSellAdvantage >= 1 && conflicts.length <= 2;
+  // Count Tier 1 patterns (required for signal)
+  const buyTier1Count = buyPatterns.filter(p => p.tier === 1).length;
+  const sellTier1Count = sellPatterns.filter(p => p.tier === 1).length;
   
-  console.log(`Signal confirmation: buy=${buyReasons.length} (net +${netBuyAdvantage}), sell=${sellReasons.length} (net +${netSellAdvantage}), conflicts=${conflicts.length}`);
+  // New requirements:
+  // 1. MUST have at least 1 Tier 1 pattern
+  // 2. Weighted score must exceed threshold (1.5)
+  // 3. Must have net advantage
+  const SCORE_THRESHOLD = 1.5;
+  
+  const canBuy = buyTier1Count >= 1 && buyScore >= SCORE_THRESHOLD && (buyScore - sellScore) >= 0.5 && conflicts.length <= 2;
+  const canSell = sellTier1Count >= 1 && sellScore >= SCORE_THRESHOLD && (sellScore - buyScore) >= 0.5 && conflicts.length <= 2;
+  
+  console.log(`Tier analysis: BUY T1=${buyTier1Count} score=${buyScore.toFixed(2)}, SELL T1=${sellTier1Count} score=${sellScore.toFixed(2)}`);
   console.log(`Can trade: BUY=${canBuy}, SELL=${canSell}`);
   
   return { canBuy, canSell, buyReasons, sellReasons, conflicts };
@@ -665,20 +698,36 @@ serve(async (req) => {
       patternStatsContext = `
 HISTORICAL PATTERN STATISTICS (25 years of EUR/USD M1 data, 2001-2025):
 
-${matchedStats.length > 0 ? `CURRENTLY DETECTED PATTERNS WITH HISTORICAL PERFORMANCE:
+PATTERN TIER SYSTEM (based on historical win rates):
+🏆 TIER 1 - HIGH PROBABILITY (>52% win rate) - REQUIRED for signals:
+   • RSI Oversold (<30): 52.4% win rate - STRONG BUY signal
+   • RSI Overbought (>70): 52.2% win rate - STRONG SELL signal  
+   • BB Lower Touch: 52.1% win rate - STRONG BUY signal
+   • BB Upper Touch: 51.7% win rate - STRONG SELL signal
+
+⚖️ TIER 2 - NEUTRAL (50-52% win rate) - Confirmation only:
+   • Stochastic extremes: ~50% win rate
+
+⚠️ TIER 3 - WEAK (<50% win rate) - Low weight:
+   • MACD Crossovers: 47-48% win rate - weak signals
+   • Engulfing patterns: 48% win rate - weak signals
+
+❌ TIER 4 - HARMFUL (<47% win rate) - PENALIZE:
+   • Golden Cross: 45.9% win rate - CONTRARIAN indicator!
+   • Death Cross: 45.9% win rate - CONTRARIAN indicator!
+
+${matchedStats.length > 0 ? `CURRENTLY DETECTED PATTERNS:
 ${matchedStats.map((s: any) => 
-  `- ${s.pattern_name.replace(/_/g, ' ').toUpperCase()} (${s.signal_type}): ${s.win_rate_24h?.toFixed(1)}% win rate over 24 candles, avg ${s.avg_pips_24h?.toFixed(2)} pips (n=${s.occurrences.toLocaleString()})`
+  `- ${s.pattern_name.replace(/_/g, ' ').toUpperCase()} (${s.signal_type}): ${s.win_rate_24h?.toFixed(1)}% win rate (n=${s.occurrences.toLocaleString()})`
 ).join('\n')}` : 'No patterns with historical data currently detected.'}
 
-${goodPatterns.length > 0 ? `✅ HISTORICALLY RELIABLE PATTERNS (>51% win rate):
-${goodPatterns.map((s: any) => `- ${s.pattern_name}: ${s.win_rate_24h?.toFixed(1)}% win rate`).join('\n')}
-→ Increase confidence if signal aligns with these patterns` : ''}
+${goodPatterns.length > 0 ? `✅ TIER 1 PATTERNS DETECTED - Signal is valid:
+${goodPatterns.map((s: any) => `- ${s.pattern_name}: ${s.win_rate_24h?.toFixed(1)}% win rate`).join('\n')}` : '⚠️ NO TIER 1 PATTERNS - Signal requires at least one!'}
 
-${badPatterns.length > 0 ? `⚠️ HISTORICALLY WEAK PATTERNS (<48% win rate):
-${badPatterns.map((s: any) => `- ${s.pattern_name}: ${s.win_rate_24h?.toFixed(1)}% win rate`).join('\n')}
-→ Consider reducing confidence or avoiding signals based solely on these` : ''}
+${badPatterns.length > 0 ? `⚠️ TIER 3/4 PATTERNS (reduce confidence):
+${badPatterns.map((s: any) => `- ${s.pattern_name}: ${s.win_rate_24h?.toFixed(1)}% win rate`).join('\n')}` : ''}
 
-KEY INSIGHT: Use these statistics to inform your confidence level. Patterns with >52% win rate are statistically significant.`;
+CRITICAL: Prioritize Tier 1 signals. Penalize confidence if only Tier 3/4 patterns present.`;
     }
 
     // Analyze past performance for learning context
@@ -773,14 +822,17 @@ ATR-BASED LEVELS (MUST USE THESE):
 If BUY: SL=${buyLevels.stopLoss.toFixed(5)}, TP1=${buyLevels.takeProfit1.toFixed(5)}, TP2=${buyLevels.takeProfit2.toFixed(5)}
 If SELL: SL=${sellLevels.stopLoss.toFixed(5)}, TP1=${sellLevels.takeProfit1.toFixed(5)}, TP2=${sellLevels.takeProfit2.toFixed(5)}
 
-TRADING GUIDELINES:
+TRADING GUIDELINES (TIER-BASED STRATEGY):
 1. You MUST choose either BUY or SELL - no other options
-2. PREFER BUY when: RSI < 50, price near support, MACD bullish, EMA alignment bullish
-3. PREFER SELL when: RSI > 50, price near resistance, MACD bearish, EMA alignment bearish
-4. ALWAYS use the ATR-based SL/TP levels provided above
-5. Confidence levels:
-   - 70-100%: Strong conviction, multiple confirming indicators
-   - 55-69%: Moderate conviction, some confirmation
+2. REQUIRE at least one Tier 1 pattern (RSI extreme or BB touch) for high confidence
+3. PREFER BUY when: RSI < 30 (Tier 1), price below lower BB (Tier 1), Stochastic < 20
+4. PREFER SELL when: RSI > 70 (Tier 1), price above upper BB (Tier 1), Stochastic > 80
+5. PENALIZE confidence if only Tier 3/4 patterns (MACD, engulfing, golden/death cross)
+6. ALWAYS use the ATR-based SL/TP levels provided above
+7. Confidence levels:
+   - 75-100%: Multiple Tier 1 patterns confirming
+   - 60-74%: At least one Tier 1 pattern with Tier 2 confirmation
+   - Below 60%: Insufficient - signal rejected
 
 RECENT PRICE ACTION:
 - 10 candles ago: ${candles[candles.length - 10]?.close?.toFixed(5) || 'N/A'}
@@ -821,7 +873,7 @@ Explain your reasoning clearly and commit to a direction.`
                 type: "object",
                 properties: {
                   signal_type: { type: "string", enum: ["BUY", "SELL"], description: "The trading signal - must be BUY or SELL" },
-                  confidence: { type: "number", description: "Confidence level 0-100. 55%+ acceptable, 70%+ preferred" },
+                  confidence: { type: "number", description: "Confidence level 0-100. Minimum 60% required. 70%+ for strong signals." },
                   entry_price: { type: "number", description: "Recommended entry price (current price)" },
                   take_profit_1: { type: "number", description: "First take profit target - use ATR-based level" },
                   take_profit_2: { type: "number", description: "Second take profit target - use ATR-based level" },
@@ -870,15 +922,15 @@ Explain your reasoning clearly and commit to a direction.`
     let signal = JSON.parse(toolCall.function.arguments);
     console.log("Parsed signal:", signal);
 
-    // Post-processing: enforce minimum confidence threshold (55%)
-    if (signal.confidence < 55) {
+    // Post-processing: enforce minimum confidence threshold (60% - raised from 55%)
+    if (signal.confidence < 60) {
       console.log(`Confidence ${signal.confidence}% too low, returning no signal`);
       return new Response(
         JSON.stringify({
           success: false,
           noSignal: true,
           message: "Confidence too low for actionable signal",
-          reason: `AI confidence was only ${signal.confidence.toFixed(0)}% (minimum 55% required)`,
+          reason: `AI confidence was only ${signal.confidence.toFixed(0)}% (minimum 60% required for tier-based strategy)`,
           originalSignal: signal.signal_type
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
