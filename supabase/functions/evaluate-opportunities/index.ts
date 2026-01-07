@@ -439,6 +439,44 @@ serve(async (req) => {
         console.error("Failed to update opportunity:", updateError);
       }
 
+      // Send Telegram notification for trade outcome
+      try {
+        const telegramPayload = {
+          type: 'outcome',
+          signal_type: opp.signal_type,
+          outcome: finalOutcome,
+          confidence: opp.confidence,
+          entry_price: opp.entry_price,
+          outcome_price: outcomePrice,
+          stop_loss: opp.stop_loss,
+          take_profit_1: opp.take_profit_1,
+          created_at: opp.created_at
+        };
+        
+        console.log("Sending Telegram outcome notification for opportunity:", opp.id);
+        
+        const telegramResponse = await fetch(
+          `${supabaseUrl}/functions/v1/send-telegram-notification`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseKey}`
+            },
+            body: JSON.stringify(telegramPayload)
+          }
+        );
+        
+        if (!telegramResponse.ok) {
+          const errorText = await telegramResponse.text();
+          console.error("Failed to send Telegram notification:", errorText);
+        } else {
+          console.log("Telegram outcome notification sent successfully");
+        }
+      } catch (telegramError) {
+        console.error("Error sending Telegram notification:", telegramError);
+      }
+
       results.push({
         id: opp.id,
         outcome,
