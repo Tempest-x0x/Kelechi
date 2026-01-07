@@ -91,6 +91,47 @@ function evaluateOutcome(
   };
 }
 
+// Send Telegram notification for trade outcome
+async function sendOutcomeNotification(
+  opportunity: Opportunity,
+  outcome: 'WIN' | 'LOSS' | 'EXPIRED',
+  outcomePrice: number,
+  supabaseUrl: string,
+  supabaseKey: string
+): Promise<void> {
+  try {
+    console.log(`Sending Telegram notification for ${outcome} outcome...`);
+    
+    const response = await fetch(`${supabaseUrl}/functions/v1/send-telegram-notification`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify({
+        type: 'outcome',
+        signal_type: opportunity.signal_type,
+        outcome,
+        confidence: opportunity.confidence,
+        entry_price: opportunity.entry_price,
+        outcome_price: outcomePrice,
+        stop_loss: opportunity.stop_loss,
+        take_profit_1: opportunity.take_profit_1,
+        created_at: opportunity.created_at,
+      }),
+    });
+    
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('Failed to send Telegram notification:', error);
+    } else {
+      console.log('Telegram notification sent successfully');
+    }
+  } catch (error) {
+    console.error('Error sending Telegram notification:', error);
+  }
+}
+
 // Generate AI learning from the outcome with improved prompt
 async function generateLearning(
   opportunity: Opportunity,
@@ -319,6 +360,15 @@ serve(async (req) => {
       }
 
       console.log(`Opportunity ${opp.id}: ${outcome} at ${outcomePrice}`);
+
+      // Send Telegram notification for the outcome
+      await sendOutcomeNotification(
+        opp as Opportunity,
+        outcome as 'WIN' | 'LOSS' | 'EXPIRED',
+        outcomePrice,
+        supabaseUrl,
+        supabaseKey
+      );
 
       // Create pattern hash for deduplication
       const patternHash = createPatternHash(

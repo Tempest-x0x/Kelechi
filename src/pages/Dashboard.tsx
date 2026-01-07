@@ -13,7 +13,6 @@ import { PatternStatsPanel } from '@/components/trading/PatternStatsPanel';
 import { OpportunitiesPanel } from '@/components/trading/OpportunitiesPanel';
 import { PredictionHistory } from '@/components/trading/PredictionHistory';
 import { LearningsPanel } from '@/components/trading/LearningsPanel';
-import { BacktestPanel } from '@/components/trading/BacktestPanel';
 import { UpgradeModal } from '@/components/dashboard/UpgradeModal';
 import { useForexData } from '@/hooks/useForexData';
 import { usePrediction } from '@/hooks/usePrediction';
@@ -233,20 +232,13 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Prediction History, Learnings & Backtest */}
-          <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-1">
-              <PredictionHistory 
-                predictions={predictions}
-                isLoading={historyLoading}
-              />
-            </div>
-            <div className="lg:col-span-1">
-              <LearningsPanel />
-            </div>
-            <div className="lg:col-span-1">
-              <BacktestPanel />
-            </div>
+          {/* Prediction History & Learnings */}
+          <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <PredictionHistory 
+              predictions={predictions}
+              isLoading={historyLoading}
+            />
+            <LearningsPanel />
           </div>
         </main>
 
