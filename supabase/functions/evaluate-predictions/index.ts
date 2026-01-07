@@ -182,17 +182,6 @@ serve(async (req) => {
             failureReason = 'Expired above entry - Bearish momentum failed';
           }
         }
-      } else if (prediction.signal_type === 'HOLD') {
-        if (isExpired) {
-          const priceChange = Math.abs(priceHistory.current - prediction.entry_price) / prediction.entry_price;
-          if (priceChange < 0.005) {
-            outcome = 'WIN';
-            successFactors = 'Correctly identified consolidation period';
-          } else {
-            outcome = 'LOSS';
-            failureReason = 'Missed a significant price movement during hold period';
-          }
-        }
       }
 
       // Update prediction if outcome determined

@@ -110,8 +110,7 @@ export function LearningsPanel() {
                           className={cn(
                             "text-xs",
                             signalType === 'BUY' && "border-bullish text-bullish",
-                            signalType === 'SELL' && "border-bearish text-bearish",
-                            signalType === 'HOLD' && "border-neutral text-neutral"
+                            signalType === 'SELL' && "border-bearish text-bearish"
                           )}
                         >
                           {signalType === 'BUY' && <TrendingUp className="h-3 w-3 mr-1" />}

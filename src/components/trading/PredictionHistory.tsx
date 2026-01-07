@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { TrendingUp, TrendingDown, Pause, CheckCircle, XCircle, Clock, Hourglass } from 'lucide-react';
+import { TrendingUp, TrendingDown, CheckCircle, XCircle, Clock, Hourglass } from 'lucide-react';
 import { Prediction } from '@/types/trading';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -48,13 +48,11 @@ export const PredictionHistory = memo(function PredictionHistory({
   const signalIcons = {
     BUY: TrendingUp,
     SELL: TrendingDown,
-    HOLD: Pause,
   };
 
   const signalColors = {
     BUY: 'text-bullish',
     SELL: 'text-bearish',
-    HOLD: 'text-neutral',
   };
 
   const outcomeIcons: Record<string, typeof CheckCircle> = {

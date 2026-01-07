@@ -371,7 +371,7 @@ function calculateIndicators(candles: Candle[]): TechnicalIndicators {
   };
 }
 
-// NEW: Signal confirmation filters - relaxed for more actionable signals
+// Signal confirmation filters - determines if market conditions support a signal
 function getSignalConfirmation(indicators: TechnicalIndicators, patterns: string[], currentPrice: number): SignalConfirmation {
   const buyReasons: string[] = [];
   const sellReasons: string[] = [];
@@ -468,7 +468,7 @@ function getSignalConfirmation(indicators: TechnicalIndicators, patterns: string
     conflicts.push('Strong conflicting patterns detected');
   }
   
-  // RELAXED: Determine if we can trade - net advantage approach
+  // Determine if we can trade - net advantage approach
   // Need 2+ reasons AND net advantage of at least 1 over opposing side
   const netBuyAdvantage = buyReasons.length - sellReasons.length;
   const netSellAdvantage = sellReasons.length - buyReasons.length;
@@ -567,6 +567,25 @@ serve(async (req) => {
     console.log("Technical indicators:", JSON.stringify(indicators));
     console.log("Patterns detected:", patterns);
     console.log("Signal confirmation:", JSON.stringify(signalConfirmation));
+
+    // If no actionable signal can be generated, return early with explanation
+    if (!signalConfirmation.canBuy && !signalConfirmation.canSell) {
+      console.log("No actionable signal - market conditions unclear");
+      return new Response(
+        JSON.stringify({
+          success: false,
+          noSignal: true,
+          message: "Market conditions unclear - no actionable signal",
+          reason: signalConfirmation.conflicts.length > 0 
+            ? `Conflicts: ${signalConfirmation.conflicts.join(', ')}`
+            : "Insufficient confirmation for BUY or SELL",
+          buyReasons: signalConfirmation.buyReasons,
+          sellReasons: signalConfirmation.sellReasons,
+          conflicts: signalConfirmation.conflicts
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -685,7 +704,7 @@ KEY INSIGHT: Use these statistics to inform your confidence level. Patterns with
 HISTORICAL PERFORMANCE (Last 15 trades):
 - Wins: ${wins}, Losses: ${losses}, Pending: ${pending}
 - Win Rate: ${winRate}%
-${winRate !== 'N/A' && parseFloat(winRate) < 50 ? '⚠️ WIN RATE IS LOW - Be more conservative, prefer HOLD signals' : ''}
+${winRate !== 'N/A' && parseFloat(winRate) < 50 ? '⚠️ WIN RATE IS LOW - Be more conservative with confidence levels' : ''}
 
 ${failedTrades.length > 0 ? `RECENT FAILED TRADES (AVOID similar setups):
 ${failedAnalysis}` : ''}
@@ -693,8 +712,8 @@ ${failedAnalysis}` : ''}
 ${lessonsLearned ? `LESSONS FROM PAST TRADES:
 ${lessonsLearned}` : ''}
 
-${buyCount >= 4 ? '⚠️ CAUTION: Too many recent BUY signals. Market may be overbought. Prefer HOLD or SELL.' : ''}
-${sellCount >= 4 ? '⚠️ CAUTION: Too many recent SELL signals. Market may be oversold. Prefer HOLD or BUY.' : ''}`;
+${buyCount >= 4 ? '⚠️ CAUTION: Too many recent BUY signals. Market may be overbought. Consider SELL if conditions support it.' : ''}
+${sellCount >= 4 ? '⚠️ CAUTION: Too many recent SELL signals. Market may be oversold. Consider BUY if conditions support it.' : ''}`;
     }
 
     // Build signal confirmation context
@@ -707,10 +726,9 @@ BUY SIGNALS (${signalConfirmation.buyReasons.length}): ${signalConfirmation.buyR
 SELL SIGNALS (${signalConfirmation.sellReasons.length}): ${signalConfirmation.sellReasons.join(', ') || 'None'}
 CONFLICTS (${signalConfirmation.conflicts.length}): ${signalConfirmation.conflicts.join(', ') || 'None'}
 
-SIGNAL GUIDANCE (for your consideration):
-- Can generate BUY: ${signalConfirmation.canBuy ? 'YES - conditions favor BUY' : 'NO - but you may still suggest BUY with lower confidence if you see opportunity'}
-- Can generate SELL: ${signalConfirmation.canSell ? 'YES - conditions favor SELL' : 'NO - but you may still suggest SELL with lower confidence if you see opportunity'}
-${signalConfirmation.conflicts.length >= 3 ? '⚠️ MANY CONFLICTS - Consider HOLD unless you see clear opportunity' : ''}`;
+SIGNAL GUIDANCE:
+- Can generate BUY: ${signalConfirmation.canBuy ? 'YES - conditions favor BUY' : 'NO'}
+- Can generate SELL: ${signalConfirmation.canSell ? 'YES - conditions favor SELL' : 'NO'}`;
 
     // Calculate ATR-based levels for reference
     const buyLevels = calculateATRBasedLevels(currentPrice, indicators.atr, 'BUY', timeframe);
@@ -722,7 +740,7 @@ ${signalConfirmation.conflicts.length >= 3 ? '⚠️ MANY CONFLICTS - Consider H
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    const analysisPrompt = `You are an EXPERT forex trading analyst specializing in EUR/USD with a CONSERVATIVE approach. Your goal is to generate HIGH-PROBABILITY signals only.
+    const analysisPrompt = `You are an EXPERT forex trading analyst specializing in EUR/USD. Generate a clear BUY or SELL signal based on the analysis.
 
 TIMEFRAME: ${timeframe} (${timeframeSettings.description})
 CURRENT PRICE: ${currentPrice}
@@ -730,7 +748,7 @@ SENTIMENT SCORE: ${sentimentScore} (range: -100 to 100)
 ${staleCheck.isStale ? `⚠️ WARNING: ${staleCheck.reason}` : ''}
 
 TECHNICAL INDICATORS:
-- RSI (14): ${indicators.rsi.toFixed(2)} ${indicators.rsi > 70 ? '(OVERBOUGHT - favor SELL or HOLD)' : indicators.rsi < 30 ? '(OVERSOLD - favor BUY or HOLD)' : '(NEUTRAL)'}
+- RSI (14): ${indicators.rsi.toFixed(2)} ${indicators.rsi > 70 ? '(OVERBOUGHT - favor SELL)' : indicators.rsi < 30 ? '(OVERSOLD - favor BUY)' : '(NEUTRAL)'}
 - MACD: ${indicators.macd.value.toFixed(5)} (Signal: ${indicators.macd.signal.toFixed(5)}, Histogram: ${indicators.macd.histogram.toFixed(5)})
 - EMA 9: ${indicators.ema9.toFixed(5)}
 - EMA 21: ${indicators.ema21.toFixed(5)}
@@ -755,16 +773,14 @@ ATR-BASED LEVELS (MUST USE THESE):
 If BUY: SL=${buyLevels.stopLoss.toFixed(5)}, TP1=${buyLevels.takeProfit1.toFixed(5)}, TP2=${buyLevels.takeProfit2.toFixed(5)}
 If SELL: SL=${sellLevels.stopLoss.toFixed(5)}, TP1=${sellLevels.takeProfit1.toFixed(5)}, TP2=${sellLevels.takeProfit2.toFixed(5)}
 
-TRADING GUIDELINES (use your judgment):
-1. PREFER BUY when: RSI < 50, price near support, MACD bullish, EMA alignment bullish
-2. PREFER SELL when: RSI > 50, price near resistance, MACD bearish, EMA alignment bearish  
-3. PREFER HOLD when: Too many conflicts (3+), or no clear directional bias
+TRADING GUIDELINES:
+1. You MUST choose either BUY or SELL - no other options
+2. PREFER BUY when: RSI < 50, price near support, MACD bullish, EMA alignment bullish
+3. PREFER SELL when: RSI > 50, price near resistance, MACD bearish, EMA alignment bearish
 4. ALWAYS use the ATR-based SL/TP levels provided above
 5. Confidence levels:
    - 70-100%: Strong conviction, multiple confirming indicators
    - 55-69%: Moderate conviction, some confirmation
-   - Below 55%: Use HOLD instead
-6. The "Signal Guidance" above is a SUGGESTION, not a hard rule. If you see a clear opportunity, you may generate BUY/SELL even if the guidance says NO.
 
 RECENT PRICE ACTION:
 - 10 candles ago: ${candles[candles.length - 10]?.close?.toFixed(5) || 'N/A'}
@@ -782,17 +798,16 @@ RECENT PRICE ACTION:
         messages: [
           { 
             role: "system", 
-            content: `You are a skilled forex trading analyst who balances opportunity with risk management.
+            content: `You are a skilled forex trading analyst. Generate clear, actionable BUY or SELL signals.
 
 Your approach:
-- Generate actionable BUY/SELL signals when you see reasonable opportunity (2+ confirming indicators)
-- Use HOLD only when the market is truly unclear or there are too many conflicts
-- The signal guidance in the prompt is a suggestion - use your analysis to make the final call
+- Generate actionable BUY or SELL signals based on technical analysis
+- You MUST choose either BUY or SELL - these are the only options
 - Always use ATR-based stop loss levels provided - never set tighter stops
 - Risk/Reward ratio should be at least 1:1.5
-- Confidence of 55%+ is acceptable for BUY/SELL, but 70%+ is preferred
+- Confidence of 55%+ is acceptable, but 70%+ is preferred
 
-Be willing to take calculated risks when the technical picture supports it. Explain your reasoning clearly.`
+Explain your reasoning clearly and commit to a direction.`
           },
           { role: "user", content: analysisPrompt }
         ],
@@ -805,8 +820,8 @@ Be willing to take calculated risks when the technical picture supports it. Expl
               parameters: {
                 type: "object",
                 properties: {
-                  signal_type: { type: "string", enum: ["BUY", "SELL", "HOLD"], description: "The trading signal - use HOLD if unsure" },
-                  confidence: { type: "number", description: "Confidence level 0-100. 55%+ acceptable for BUY/SELL, 70%+ preferred" },
+                  signal_type: { type: "string", enum: ["BUY", "SELL"], description: "The trading signal - must be BUY or SELL" },
+                  confidence: { type: "number", description: "Confidence level 0-100. 55%+ acceptable, 70%+ preferred" },
                   entry_price: { type: "number", description: "Recommended entry price (current price)" },
                   take_profit_1: { type: "number", description: "First take profit target - use ATR-based level" },
                   take_profit_2: { type: "number", description: "Second take profit target - use ATR-based level" },
@@ -855,24 +870,49 @@ Be willing to take calculated risks when the technical picture supports it. Expl
     let signal = JSON.parse(toolCall.function.arguments);
     console.log("Parsed signal:", signal);
 
-    // Post-processing: enforce RELAXED confidence threshold (55% minimum)
-    if (signal.signal_type !== 'HOLD' && signal.confidence < 55) {
-      console.log(`Confidence ${signal.confidence}% too low for ${signal.signal_type}, converting to HOLD`);
-      const originalSignal = signal.signal_type;
-      signal.signal_type = 'HOLD';
-      signal.reasoning = `Original signal was ${originalSignal} but confidence (${signal.confidence}%) was below 55% minimum threshold. ${signal.reasoning}`;
+    // Post-processing: enforce minimum confidence threshold (55%)
+    if (signal.confidence < 55) {
+      console.log(`Confidence ${signal.confidence}% too low, returning no signal`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          noSignal: true,
+          message: "Confidence too low for actionable signal",
+          reason: `AI confidence was only ${signal.confidence.toFixed(0)}% (minimum 55% required)`,
+          originalSignal: signal.signal_type
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Enforce signal confirmation rules
     if (signal.signal_type === 'BUY' && !signalConfirmation.canBuy) {
       console.log("BUY signal blocked by confirmation filters");
-      signal.signal_type = 'HOLD';
-      signal.reasoning = `BUY signal blocked: insufficient confirmation. Conflicts: ${signalConfirmation.conflicts.join(', ')}. ${signal.reasoning}`;
+      return new Response(
+        JSON.stringify({
+          success: false,
+          noSignal: true,
+          message: "BUY signal blocked - insufficient confirmation",
+          reason: `Conflicts: ${signalConfirmation.conflicts.join(', ')}`,
+          buyReasons: signalConfirmation.buyReasons,
+          sellReasons: signalConfirmation.sellReasons
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
     if (signal.signal_type === 'SELL' && !signalConfirmation.canSell) {
       console.log("SELL signal blocked by confirmation filters");
-      signal.signal_type = 'HOLD';
-      signal.reasoning = `SELL signal blocked: insufficient confirmation. Conflicts: ${signalConfirmation.conflicts.join(', ')}. ${signal.reasoning}`;
+      return new Response(
+        JSON.stringify({
+          success: false,
+          noSignal: true,
+          message: "SELL signal blocked - insufficient confirmation",
+          reason: `Conflicts: ${signalConfirmation.conflicts.join(', ')}`,
+          buyReasons: signalConfirmation.buyReasons,
+          sellReasons: signalConfirmation.sellReasons
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // Ensure ATR-based levels are used

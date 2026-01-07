@@ -84,7 +84,7 @@ const Landing = () => {
     {
       icon: Target,
       title: 'Directional Bias',
-      description: 'Clear BUY/SELL/HOLD direction every trading day with confidence scoring'
+      description: 'Clear BUY/SELL direction every trading day with confidence scoring'
     },
     {
       icon: Shield,

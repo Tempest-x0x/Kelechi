@@ -20,7 +20,7 @@ export interface TechnicalIndicators {
 export interface Prediction {
   id: string;
   created_at: string;
-  signal_type: 'BUY' | 'SELL' | 'HOLD';
+  signal_type: 'BUY' | 'SELL';
   confidence: number;
   entry_price: number;
   take_profit_1?: number;

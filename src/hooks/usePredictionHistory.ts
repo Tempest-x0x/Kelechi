@@ -22,7 +22,7 @@ export function usePredictionHistory() {
       const transformed = (data || []).map((row: any) => ({
         id: row.id,
         created_at: row.created_at,
-        signal_type: row.signal_type as 'BUY' | 'SELL' | 'HOLD',
+        signal_type: row.signal_type as 'BUY' | 'SELL',
         confidence: Number(row.confidence),
         entry_price: Number(row.entry_price),
         take_profit_1: row.take_profit_1 ? Number(row.take_profit_1) : undefined,
@@ -66,7 +66,7 @@ export function usePredictionHistory() {
           const transformed: Prediction = {
             id: newPrediction.id,
             created_at: newPrediction.created_at,
-            signal_type: newPrediction.signal_type,
+            signal_type: newPrediction.signal_type as 'BUY' | 'SELL',
             confidence: Number(newPrediction.confidence),
             entry_price: Number(newPrediction.entry_price),
             take_profit_1: newPrediction.take_profit_1 ? Number(newPrediction.take_profit_1) : undefined,

@@ -55,32 +55,20 @@ export const SignalCard = memo(function SignalCard({
   const signalColors = {
     BUY: 'signal-buy',
     SELL: 'signal-sell',
-    HOLD: 'signal-hold',
   };
 
-  // Determine if signal meets confidence threshold
-  const isLowConfidence = prediction.confidence < 70 && prediction.signal_type !== 'HOLD';
-  const effectiveSignalType = isLowConfidence ? 'HOLD' : prediction.signal_type;
-  const SignalIcon = effectiveSignalType === 'BUY' ? TrendingUp : effectiveSignalType === 'SELL' ? TrendingDown : Pause;
+  const SignalIcon = prediction.signal_type === 'BUY' ? TrendingUp : TrendingDown;
 
   return (
     <div className="trading-card p-6 relative overflow-hidden">
-      {/* Low confidence warning */}
-      {isLowConfidence && (
-        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2 mb-4 text-xs text-yellow-600 dark:text-yellow-400">
-          Original signal was {prediction.signal_type} but confidence ({prediction.confidence.toFixed(0)}%) is below 70% threshold. Displaying as HOLD.
-        </div>
-      )}
-      
       {/* Signal badge */}
       <div className="flex items-center justify-between mb-4">
-        <div className={cn('flex items-center gap-2 px-3 py-1.5 rounded-full font-semibold text-sm', signalColors[effectiveSignalType])}>
+        <div className={cn('flex items-center gap-2 px-3 py-1.5 rounded-full font-semibold text-sm', signalColors[prediction.signal_type])}>
           <SignalIcon className="h-4 w-4" />
-          {effectiveSignalType}
-          {isLowConfidence && <span className="text-xs opacity-70">(was {prediction.signal_type})</span>}
+          {prediction.signal_type}
         </div>
         <div className="text-right">
-          <span className={cn("text-2xl font-bold", prediction.confidence < 70 && "text-yellow-500")}>{prediction.confidence.toFixed(0)}%</span>
+          <span className="text-2xl font-bold">{prediction.confidence.toFixed(0)}%</span>
           <p className="text-xs text-muted-foreground">Confidence</p>
         </div>
       </div>
