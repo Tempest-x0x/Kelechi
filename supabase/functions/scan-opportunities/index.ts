@@ -575,38 +575,42 @@ function analyzeOpportunity(
   return { signal, confidence, reasons, patternData: matchedPatternStats };
 }
 
-// Calculate ATR-based levels with professional R:R ratios
-// Minimum 1:2 R:R ensures profitability at just 34% win rate
+// Calculate ATR-based levels with ENFORCED 1:3 R:R
+// 1:3 R:R ensures profitability at just 25% win rate - prop firm compatible
 function calculateLevels(
   currentPrice: number, 
   atr: number, 
   signalType: 'BUY' | 'SELL',
   confidence: number
 ): { stopLoss: number; takeProfit1: number; takeProfit2: number; riskRewardRatio: string } {
-  // Dynamic R:R based on confidence level
-  // Higher confidence = slightly larger stop (more room) and larger targets
-  let slMult: number;
-  let tp1Mult: number;
-  let tp2Mult: number;
+  // ENFORCED 1:3 MINIMUM R:R - Suitable for prop firm challenges
+  // SL = 1.0x ATR, TP1 = 3.0x ATR (1:3 R:R)
+  // TP2 = 4.5x ATR (1:4.5 R:R for runners)
   
+  // Base multipliers for 1:3 R:R
+  let slMult = 1.0;
+  let tp1Mult = 3.0;
+  let tp2Mult = 4.5;
+  
+  // Higher confidence = slightly tighter stop for even better R:R
   if (confidence >= 80) {
-    // High confidence: Aggressive targets (1:2.5 R:R)
-    slMult = 1.2;
-    tp1Mult = 2.5;
-    tp2Mult = 4.0;
+    slMult = 0.8;  // Tighter stop = 1:3.75 R:R
+    tp1Mult = 3.0;
+    tp2Mult = 4.5;
   } else if (confidence >= 70) {
-    // Standard confidence: Balanced targets (1:2 R:R)
-    slMult = 1.0;
-    tp1Mult = 2.0;
-    tp2Mult = 3.0;
+    slMult = 1.0;  // Standard 1:3 R:R
+    tp1Mult = 3.0;
+    tp2Mult = 4.5;
   } else {
-    // Lower confidence (65-70): Conservative targets (1:1.5 R:R minimum)
-    slMult = 1.0;
-    tp1Mult = 1.5;
-    tp2Mult = 2.5;
+    // Lower confidence: slightly wider stop but maintain 1:3 minimum
+    slMult = 1.2;
+    tp1Mult = 3.6;  // 1:3 R:R maintained
+    tp2Mult = 5.0;
   }
   
   const riskRewardRatio = `1:${(tp1Mult / slMult).toFixed(1)}`;
+  
+  console.log(`Calculating levels: confidence=${confidence}, R:R=${riskRewardRatio}, SL=${slMult}x ATR, TP1=${tp1Mult}x ATR`);
   
   if (signalType === 'BUY') {
     return {

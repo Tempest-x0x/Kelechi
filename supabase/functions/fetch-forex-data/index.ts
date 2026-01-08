@@ -344,8 +344,8 @@ serve(async (req) => {
 
     const currentPrice = candles[candles.length - 1]?.close || 0;
 
-    // Cache last 120 candles in backend DB (avoid huge inserts)
-    const priceHistoryData = candles.slice(-120).map((c: any) => ({
+    // Cache last 300 candles in backend DB for deeper analysis
+    const priceHistoryData = candles.slice(-300).map((c: any) => ({
       symbol: "EUR/USD",
       timestamp: c.timestamp,
       open: c.open,

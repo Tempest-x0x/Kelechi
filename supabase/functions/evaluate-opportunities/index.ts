@@ -248,7 +248,13 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    });
 
     // Find ALL opportunities that need evaluation (both active and expired)
     // This includes ACTIVE ones that may have hit SL/TP
@@ -346,19 +352,25 @@ serve(async (req) => {
         console.log(`Skipping learning generation for ${opp.id} - similar learning exists`);
         
         // Still update the opportunity outcome, but skip learning generation
-        const { error: skipUpdateError } = await supabase
+        // Use .select() to verify rows were actually updated
+        const { data: updatedOpp, error: skipUpdateError } = await supabase
           .from('trading_opportunities')
           .update({
             outcome,
             status: outcome === 'WIN' ? 'COMPLETED' : 'CLOSED',
             evaluated_at: new Date().toISOString()
           })
-          .eq('id', opp.id);
+          .eq('id', opp.id)
+          .select()
+          .single();
 
-        if (skipUpdateError) {
-          console.error(`Failed to update opportunity ${opp.id} in skip path:`, skipUpdateError);
+        if (skipUpdateError || !updatedOpp) {
+          console.error(`Failed to update opportunity ${opp.id} in skip path:`, skipUpdateError || 'No rows updated');
+          console.error(`Update attempted with: outcome=${outcome}, id=${opp.id}`);
           continue; // Skip to next opportunity, don't send duplicate notifications
         }
+        
+        console.log(`Successfully updated opportunity ${opp.id} to ${outcome} in skip path`);
 
         // Send Telegram notification if not already sent
         if (!opp.notification_sent_at) {
@@ -477,8 +489,8 @@ serve(async (req) => {
         console.error("Failed to store learning:", learningError);
       }
 
-      // Update opportunity
-      const { error: updateError } = await supabase
+      // Update opportunity with .select() to verify rows were actually updated
+      const { data: updatedMainOpp, error: updateError } = await supabase
         .from('trading_opportunities')
         .update({
           outcome,
@@ -486,11 +498,17 @@ serve(async (req) => {
           evaluated_at: new Date().toISOString(),
           ai_learning_id: newLearning?.id || null
         })
-        .eq('id', opp.id);
+        .eq('id', opp.id)
+        .select()
+        .single();
 
-      if (updateError) {
-        console.error("Failed to update opportunity:", updateError);
+      if (updateError || !updatedMainOpp) {
+        console.error("Failed to update opportunity:", updateError || 'No rows updated');
+        console.error(`Update attempted with: outcome=${outcome}, id=${opp.id}`);
+        continue; // Skip to next opportunity
       }
+      
+      console.log(`Successfully updated opportunity ${opp.id} to ${outcome} in main path`);
 
       // Send Telegram notification for trade outcome (only if not already sent)
       if (!opp.notification_sent_at) {
