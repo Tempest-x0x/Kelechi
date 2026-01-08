@@ -308,6 +308,7 @@ export type Database = {
           evaluated_at: string | null
           expires_at: string
           id: string
+          notification_sent_at: string | null
           outcome: string | null
           pattern_stats: Json | null
           patterns_detected: Json | null
@@ -329,6 +330,7 @@ export type Database = {
           evaluated_at?: string | null
           expires_at: string
           id?: string
+          notification_sent_at?: string | null
           outcome?: string | null
           pattern_stats?: Json | null
           patterns_detected?: Json | null
@@ -350,6 +352,7 @@ export type Database = {
           evaluated_at?: string | null
           expires_at?: string
           id?: string
+          notification_sent_at?: string | null
           outcome?: string | null
           pattern_stats?: Json | null
           patterns_detected?: Json | null
