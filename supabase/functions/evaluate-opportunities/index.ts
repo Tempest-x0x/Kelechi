@@ -19,6 +19,7 @@ interface Opportunity {
   confidence: number;
   created_at: string;
   expires_at: string;
+  notification_sent_at: string | null;
 }
 
 interface PricePoint {
@@ -345,7 +346,7 @@ serve(async (req) => {
         console.log(`Skipping learning generation for ${opp.id} - similar learning exists`);
         
         // Still update the opportunity outcome, but skip learning generation
-        await supabase
+        const { error: skipUpdateError } = await supabase
           .from('trading_opportunities')
           .update({
             outcome,
@@ -353,6 +354,58 @@ serve(async (req) => {
             evaluated_at: new Date().toISOString()
           })
           .eq('id', opp.id);
+
+        if (skipUpdateError) {
+          console.error(`Failed to update opportunity ${opp.id} in skip path:`, skipUpdateError);
+          continue; // Skip to next opportunity, don't send duplicate notifications
+        }
+
+        // Send Telegram notification if not already sent
+        if (!opp.notification_sent_at) {
+          try {
+            const telegramPayload = {
+              type: 'outcome',
+              signal_type: opp.signal_type,
+              outcome: outcome as 'WIN' | 'LOSS' | 'EXPIRED',
+              confidence: opp.confidence,
+              entry_price: opp.entry_price,
+              outcome_price: outcomePrice,
+              stop_loss: opp.stop_loss,
+              take_profit_1: opp.take_profit_1,
+              created_at: opp.created_at
+            };
+            
+            console.log("Sending Telegram outcome notification (skip path) for opportunity:", opp.id);
+            
+            const telegramResponse = await fetch(
+              `${supabaseUrl}/functions/v1/send-telegram-notification`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${supabaseKey}`
+                },
+                body: JSON.stringify(telegramPayload)
+              }
+            );
+            
+            if (telegramResponse.ok) {
+              // Mark notification as sent
+              await supabase
+                .from('trading_opportunities')
+                .update({ notification_sent_at: new Date().toISOString() })
+                .eq('id', opp.id);
+              console.log("Telegram outcome notification sent successfully (skip path)");
+            } else {
+              const errorText = await telegramResponse.text();
+              console.error("Failed to send Telegram notification (skip path):", errorText);
+            }
+          } catch (telegramError) {
+            console.error("Error sending Telegram notification (skip path):", telegramError);
+          }
+        } else {
+          console.log(`Skipping Telegram notification for ${opp.id} - already sent at ${opp.notification_sent_at}`);
+        }
 
         results.push({
           id: opp.id,
@@ -439,42 +492,51 @@ serve(async (req) => {
         console.error("Failed to update opportunity:", updateError);
       }
 
-      // Send Telegram notification for trade outcome
-      try {
-        const telegramPayload = {
-          type: 'outcome',
-          signal_type: opp.signal_type,
-          outcome: finalOutcome,
-          confidence: opp.confidence,
-          entry_price: opp.entry_price,
-          outcome_price: outcomePrice,
-          stop_loss: opp.stop_loss,
-          take_profit_1: opp.take_profit_1,
-          created_at: opp.created_at
-        };
-        
-        console.log("Sending Telegram outcome notification for opportunity:", opp.id);
-        
-        const telegramResponse = await fetch(
-          `${supabaseUrl}/functions/v1/send-telegram-notification`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${supabaseKey}`
-            },
-            body: JSON.stringify(telegramPayload)
+      // Send Telegram notification for trade outcome (only if not already sent)
+      if (!opp.notification_sent_at) {
+        try {
+          const telegramPayload = {
+            type: 'outcome',
+            signal_type: opp.signal_type,
+            outcome: finalOutcome,
+            confidence: opp.confidence,
+            entry_price: opp.entry_price,
+            outcome_price: outcomePrice,
+            stop_loss: opp.stop_loss,
+            take_profit_1: opp.take_profit_1,
+            created_at: opp.created_at
+          };
+          
+          console.log("Sending Telegram outcome notification for opportunity:", opp.id);
+          
+          const telegramResponse = await fetch(
+            `${supabaseUrl}/functions/v1/send-telegram-notification`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${supabaseKey}`
+              },
+              body: JSON.stringify(telegramPayload)
+            }
+          );
+          
+          if (telegramResponse.ok) {
+            // Mark notification as sent
+            await supabase
+              .from('trading_opportunities')
+              .update({ notification_sent_at: new Date().toISOString() })
+              .eq('id', opp.id);
+            console.log("Telegram outcome notification sent successfully");
+          } else {
+            const errorText = await telegramResponse.text();
+            console.error("Failed to send Telegram notification:", errorText);
           }
-        );
-        
-        if (!telegramResponse.ok) {
-          const errorText = await telegramResponse.text();
-          console.error("Failed to send Telegram notification:", errorText);
-        } else {
-          console.log("Telegram outcome notification sent successfully");
+        } catch (telegramError) {
+          console.error("Error sending Telegram notification:", telegramError);
         }
-      } catch (telegramError) {
-        console.error("Error sending Telegram notification:", telegramError);
+      } else {
+        console.log(`Skipping Telegram notification for ${opp.id} - already sent at ${opp.notification_sent_at}`);
       }
 
       results.push({
