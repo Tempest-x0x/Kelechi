@@ -35,6 +35,10 @@ interface OutcomeNotification {
   stop_loss: number | null;
   take_profit_1: number | null;
   created_at: string;
+  symbol?: string;
+  reasoning?: string;
+  learning_summary?: string;
+  patterns_detected?: string[];
 }
 
 type TelegramNotification = OpportunityNotification | OutcomeNotification;
@@ -53,10 +57,13 @@ Previous ${prevEmoji} ${opportunity.previous_signal.signal_type} signal (${oppor
 `;
   }
   
+  // Support symbol in signal notifications too
+  const symbol = (opportunity as any).symbol || 'EUR/USD';
+  
   return `
 ${reversalHeader}${emoji} *NEW ${opportunity.signal_type} SIGNAL* ${arrow}
 
-📊 *EUR/USD*
+📊 *${symbol}*
 💯 Confidence: ${opportunity.confidence.toFixed(0)}%
 
 📍 Entry: ${opportunity.entry_price.toFixed(5)}
@@ -73,7 +80,10 @@ _ForexTell AI - Not financial advice_
 }
 
 function formatOutcomeMessage(notification: OutcomeNotification): string {
-  const { signal_type, outcome, confidence, entry_price, outcome_price, created_at } = notification;
+  const { 
+    signal_type, outcome, confidence, entry_price, outcome_price, created_at,
+    symbol = 'EUR/USD', reasoning, learning_summary, patterns_detected 
+  } = notification;
   
   const pipsMove = Math.abs(outcome_price - entry_price) * 10000;
   const isProfit = (signal_type === 'BUY' && outcome_price > entry_price) || 
@@ -89,17 +99,31 @@ function formatOutcomeMessage(notification: OutcomeNotification): string {
   
   const signalEmoji = signal_type === 'BUY' ? '🟢' : '🔴';
   
+  // Format patterns for display
+  const patternsStr = patterns_detected && patterns_detected.length > 0 
+    ? patterns_detected.map(p => p.replace(/_/g, ' ')).join(', ')
+    : null;
+  
+  // Build analysis section if reasoning/learning available
+  const analysisSection = (reasoning || learning_summary) ? `
+📝 *Analysis:*
+${reasoning ? reasoning.split('\n')[0].slice(0, 150) : ''}
+
+🧠 *AI Learning:*
+${learning_summary ? learning_summary.slice(0, 200) : 'Insight recorded for future signals'}
+${patternsStr ? `\n🔍 Patterns: ${patternsStr}` : ''}` : '';
+  
   if (outcome === 'WIN') {
     return `
 ✅ *SIGNAL RESULT: WIN* 🎯
 
-📊 EUR/USD ${signalEmoji} ${signal_type}
+📊 ${symbol} ${signalEmoji} ${signal_type}
 💯 Confidence: ${confidence.toFixed(0)}%
 
 📍 Entry: ${entry_price.toFixed(5)}
 🎯 TP Hit: ${outcome_price.toFixed(5)}
 📈 +${pipsMove.toFixed(1)} pips profit
-
+${analysisSection}
 ⏱️ Duration: ${durationStr}
 ⏰ ${new Date().toLocaleString('en-US', { timeZone: 'UTC' })} UTC
 
@@ -109,13 +133,13 @@ _ForexTell AI - Trade closed successfully_
     return `
 ❌ *SIGNAL RESULT: LOSS* 🛑
 
-📊 EUR/USD ${signalEmoji} ${signal_type}
+📊 ${symbol} ${signalEmoji} ${signal_type}
 💯 Confidence: ${confidence.toFixed(0)}%
 
 📍 Entry: ${entry_price.toFixed(5)}
 🛑 SL Hit: ${outcome_price.toFixed(5)}
 📉 -${pipsMove.toFixed(1)} pips loss
-
+${analysisSection}
 ⏱️ Duration: ${durationStr}
 ⏰ ${new Date().toLocaleString('en-US', { timeZone: 'UTC' })} UTC
 
@@ -127,13 +151,13 @@ _ForexTell AI - Stop loss triggered_
     return `
 ⏳ *SIGNAL EXPIRED*
 
-📊 EUR/USD ${signalEmoji} ${signal_type}
+📊 ${symbol} ${signalEmoji} ${signal_type}
 💯 Confidence: ${confidence.toFixed(0)}%
 
 📍 Entry: ${entry_price.toFixed(5)}
 📍 Exit: ${outcome_price.toFixed(5)}
 ${isProfit ? '📈' : '📉'} ${pipsDisplay} pips (unrealized)
-
+${analysisSection}
 ⏱️ Duration: ${durationStr} (expired)
 ⏰ ${new Date().toLocaleString('en-US', { timeZone: 'UTC' })} UTC
 

@@ -20,6 +20,7 @@ interface Opportunity {
   created_at: string;
   expires_at: string;
   notification_sent_at: string | null;
+  symbol: string;
 }
 
 interface PricePoint {
@@ -384,7 +385,11 @@ serve(async (req) => {
               outcome_price: outcomePrice,
               stop_loss: opp.stop_loss,
               take_profit_1: opp.take_profit_1,
-              created_at: opp.created_at
+              created_at: opp.created_at,
+              symbol: opp.symbol || 'EUR/USD',
+              reasoning: opp.reasoning,
+              learning_summary: 'Similar pattern analyzed recently - see previous insights',
+              patterns_detected: opp.patterns_detected || []
             };
             
             console.log("Sending Telegram outcome notification (skip path) for opportunity:", opp.id);
@@ -522,7 +527,11 @@ serve(async (req) => {
             outcome_price: outcomePrice,
             stop_loss: opp.stop_loss,
             take_profit_1: opp.take_profit_1,
-            created_at: opp.created_at
+            created_at: opp.created_at,
+            symbol: opp.symbol || 'EUR/USD',
+            reasoning: opp.reasoning,
+            learning_summary: learning.lesson,
+            patterns_detected: opp.patterns_detected || []
           };
           
           console.log("Sending Telegram outcome notification for opportunity:", opp.id);

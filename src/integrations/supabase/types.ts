@@ -316,6 +316,7 @@ export type Database = {
           signal_type: string
           status: string | null
           stop_loss: number | null
+          symbol: string | null
           take_profit_1: number | null
           take_profit_2: number | null
           technical_indicators: Json | null
@@ -338,6 +339,7 @@ export type Database = {
           signal_type: string
           status?: string | null
           stop_loss?: number | null
+          symbol?: string | null
           take_profit_1?: number | null
           take_profit_2?: number | null
           technical_indicators?: Json | null
@@ -360,6 +362,7 @@ export type Database = {
           signal_type?: string
           status?: string | null
           stop_loss?: number | null
+          symbol?: string | null
           take_profit_1?: number | null
           take_profit_2?: number | null
           technical_indicators?: Json | null
