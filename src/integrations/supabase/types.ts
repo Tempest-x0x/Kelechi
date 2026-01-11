@@ -28,6 +28,7 @@ export type Database = {
           pattern_name: string
           sample_size: number | null
           signal_type: string
+          symbol: string | null
           win_rate_12h: number | null
           win_rate_24h: number | null
           win_rate_48h: number | null
@@ -46,6 +47,7 @@ export type Database = {
           pattern_name: string
           sample_size?: number | null
           signal_type: string
+          symbol?: string | null
           win_rate_12h?: number | null
           win_rate_24h?: number | null
           win_rate_48h?: number | null
@@ -64,6 +66,7 @@ export type Database = {
           pattern_name?: string
           sample_size?: number | null
           signal_type?: string
+          symbol?: string | null
           win_rate_12h?: number | null
           win_rate_24h?: number | null
           win_rate_48h?: number | null

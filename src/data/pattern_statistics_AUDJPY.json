@@ -1,0 +1,280 @@
+{
+  "generated_at": "2026-01-10T22:28:00.986177",
+  "data_range": {
+    "start": "2002-08-19 17:32:00",
+    "end": "2025-12-31 16:57:00",
+    "total_candles": 8067968
+  },
+  "patterns": [
+    {
+      "pattern_name": "rsi_oversold",
+      "signal_type": "BUY",
+      "occurrences": 233397,
+      "outcomes": {
+        "4_candles": {
+          "win_rate": 48.33,
+          "avg_pips": -10.78,
+          "sample_size": 233397
+        },
+        "12_candles": {
+          "win_rate": 50.56,
+          "avg_pips": 12.31,
+          "sample_size": 233397
+        },
+        "24_candles": {
+          "win_rate": 51.52,
+          "avg_pips": 10.74,
+          "sample_size": 233397
+        },
+        "48_candles": {
+          "win_rate": 52.03,
+          "avg_pips": 28.51,
+          "sample_size": 233397
+        }
+      }
+    },
+    {
+      "pattern_name": "rsi_overbought",
+      "signal_type": "SELL",
+      "occurrences": 250576,
+      "outcomes": {
+        "4_candles": {
+          "win_rate": 47.01,
+          "avg_pips": -12.84,
+          "sample_size": 250576
+        },
+        "12_candles": {
+          "win_rate": 48.61,
+          "avg_pips": -23.75,
+          "sample_size": 250575
+        },
+        "24_candles": {
+          "win_rate": 49.33,
+          "avg_pips": -21.06,
+          "sample_size": 250573
+        },
+        "48_candles": {
+          "win_rate": 49.42,
+          "avg_pips": -11.43,
+          "sample_size": 250573
+        }
+      }
+    },
+    {
+      "pattern_name": "macd_bullish_cross",
+      "signal_type": "BUY",
+      "occurrences": 340117,
+      "outcomes": {
+        "4_candles": {
+          "win_rate": 44.93,
+          "avg_pips": -3827.35,
+          "sample_size": 340117
+        },
+        "12_candles": {
+          "win_rate": 47.12,
+          "avg_pips": -3774.25,
+          "sample_size": 340117
+        },
+        "24_candles": {
+          "win_rate": 48.25,
+          "avg_pips": -3886.71,
+          "sample_size": 340117
+        },
+        "48_candles": {
+          "win_rate": 49.2,
+          "avg_pips": -3906.39,
+          "sample_size": 340117
+        }
+      }
+    },
+    {
+      "pattern_name": "macd_bearish_cross",
+      "signal_type": "SELL",
+      "occurrences": 340118,
+      "outcomes": {
+        "4_candles": {
+          "win_rate": 44.09,
+          "avg_pips": -2562.42,
+          "sample_size": 340118
+        },
+        "12_candles": {
+          "win_rate": 45.55,
+          "avg_pips": -2634.79,
+          "sample_size": 340117
+        },
+        "24_candles": {
+          "win_rate": 46.32,
+          "avg_pips": -2620.59,
+          "sample_size": 340117
+        },
+        "48_candles": {
+          "win_rate": 46.74,
+          "avg_pips": -2610.01,
+          "sample_size": 340117
+        }
+      }
+    },
+    {
+      "pattern_name": "bb_lower_touch",
+      "signal_type": "BUY",
+      "occurrences": 872858,
+      "outcomes": {
+        "4_candles": {
+          "win_rate": 50.08,
+          "avg_pips": 8.63,
+          "sample_size": 872855
+        },
+        "12_candles": {
+          "win_rate": 51.95,
+          "avg_pips": 19.44,
+          "sample_size": 872855
+        },
+        "24_candles": {
+          "win_rate": 52.54,
+          "avg_pips": 18.27,
+          "sample_size": 872855
+        },
+        "48_candles": {
+          "win_rate": 52.93,
+          "avg_pips": 19.07,
+          "sample_size": 872855
+        }
+      }
+    },
+    {
+      "pattern_name": "bb_upper_touch",
+      "signal_type": "SELL",
+      "occurrences": 889782,
+      "outcomes": {
+        "4_candles": {
+          "win_rate": 49.43,
+          "avg_pips": -440.29,
+          "sample_size": 889782
+        },
+        "12_candles": {
+          "win_rate": 50.67,
+          "avg_pips": -422.72,
+          "sample_size": 889781
+        },
+        "24_candles": {
+          "win_rate": 50.72,
+          "avg_pips": -425.69,
+          "sample_size": 889776
+        },
+        "48_candles": {
+          "win_rate": 50.5,
+          "avg_pips": -453.08,
+          "sample_size": 889772
+        }
+      }
+    },
+    {
+      "pattern_name": "golden_cross",
+      "signal_type": "BUY",
+      "occurrences": 27745,
+      "outcomes": {
+        "4_candles": {
+          "win_rate": 42.5,
+          "avg_pips": -16943.21,
+          "sample_size": 27745
+        },
+        "12_candles": {
+          "win_rate": 44.37,
+          "avg_pips": -17055.12,
+          "sample_size": 27745
+        },
+        "24_candles": {
+          "win_rate": 45.33,
+          "avg_pips": -18124.41,
+          "sample_size": 27745
+        },
+        "48_candles": {
+          "win_rate": 46.3,
+          "avg_pips": -18127.05,
+          "sample_size": 27745
+        }
+      }
+    },
+    {
+      "pattern_name": "death_cross",
+      "signal_type": "SELL",
+      "occurrences": 27746,
+      "outcomes": {
+        "4_candles": {
+          "win_rate": 41.85,
+          "avg_pips": -10697.62,
+          "sample_size": 27746
+        },
+        "12_candles": {
+          "win_rate": 42.11,
+          "avg_pips": -11007.3,
+          "sample_size": 27746
+        },
+        "24_candles": {
+          "win_rate": 43.26,
+          "avg_pips": -11111.66,
+          "sample_size": 27746
+        },
+        "48_candles": {
+          "win_rate": 43.8,
+          "avg_pips": -10244.61,
+          "sample_size": 27746
+        }
+      }
+    },
+    {
+      "pattern_name": "bullish_engulfing",
+      "signal_type": "BUY",
+      "occurrences": 411797,
+      "outcomes": {
+        "4_candles": {
+          "win_rate": 46.98,
+          "avg_pips": -590.69,
+          "sample_size": 411797
+        },
+        "12_candles": {
+          "win_rate": 48.28,
+          "avg_pips": -640.74,
+          "sample_size": 411797
+        },
+        "24_candles": {
+          "win_rate": 49.05,
+          "avg_pips": -595.04,
+          "sample_size": 411797
+        },
+        "48_candles": {
+          "win_rate": 49.67,
+          "avg_pips": -677.26,
+          "sample_size": 411795
+        }
+      }
+    },
+    {
+      "pattern_name": "bearish_engulfing",
+      "signal_type": "SELL",
+      "occurrences": 413488,
+      "outcomes": {
+        "4_candles": {
+          "win_rate": 46.02,
+          "avg_pips": -480.39,
+          "sample_size": 413488
+        },
+        "12_candles": {
+          "win_rate": 46.81,
+          "avg_pips": -475.7,
+          "sample_size": 413487
+        },
+        "24_candles": {
+          "win_rate": 47.16,
+          "avg_pips": -474.5,
+          "sample_size": 413485
+        },
+        "48_candles": {
+          "win_rate": 47.49,
+          "avg_pips": -496.49,
+          "sample_size": 413485
+        }
+      }
+    }
+  ]
+}
