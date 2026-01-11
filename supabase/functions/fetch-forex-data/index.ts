@@ -24,6 +24,41 @@ type CachedResponse = {
   meta: { source: "cache"; warning?: string };
 };
 
+// Supported currency pairs with their TwelveData format
+const SUPPORTED_PAIRS: Record<string, string> = {
+  "EUR/USD": "EUR/USD",
+  "GBP/USD": "GBP/USD",
+  "USD/JPY": "USD/JPY",
+  "USD/CHF": "USD/CHF",
+  "AUD/USD": "AUD/USD",
+  "USD/CAD": "USD/CAD",
+  "NZD/USD": "NZD/USD",
+  "EUR/GBP": "EUR/GBP",
+  "EUR/JPY": "EUR/JPY",
+  "GBP/JPY": "GBP/JPY",
+  "AUD/JPY": "AUD/JPY",
+  "XAU/USD": "XAU/USD",
+  // Alternative formats
+  "EURUSD": "EUR/USD",
+  "GBPUSD": "GBP/USD",
+  "USDJPY": "USD/JPY",
+  "USDCHF": "USD/CHF",
+  "AUDUSD": "AUD/USD",
+  "USDCAD": "USD/CAD",
+  "NZDUSD": "NZD/USD",
+  "EURGBP": "EUR/GBP",
+  "EURJPY": "EUR/JPY",
+  "GBPJPY": "GBP/JPY",
+  "AUDJPY": "AUD/JPY",
+  "XAUUSD": "XAU/USD",
+};
+
+function normalizeSymbol(input: string): { dbSymbol: string; apiSymbol: string } {
+  const upper = (input || "EUR/USD").toUpperCase().trim();
+  const apiSymbol = SUPPORTED_PAIRS[upper] || "EUR/USD";
+  return { dbSymbol: apiSymbol, apiSymbol };
+}
+
 function normalizeInterval(timeframe: string): { interval: string; normalizedTimeframe: string } {
   const intervalMap: Record<string, { interval: string; normalizedTimeframe: string }> = {
     "1min": { interval: "1min", normalizedTimeframe: "1min" },
@@ -131,11 +166,17 @@ serve(async (req) => {
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  const readCache = async (timeframe: string, warning?: string): Promise<CachedResponse | null> => {
+  // Parse body early to get symbol
+  const body = await req.json().catch(() => ({}));
+  const { dbSymbol, apiSymbol } = normalizeSymbol(body?.symbol);
+  
+  console.log(`Fetching data for symbol: ${dbSymbol} (API: ${apiSymbol})`);
+
+  const readCache = async (symbol: string, timeframe: string, warning?: string): Promise<CachedResponse | null> => {
     const { data, error } = await supabase
       .from("price_history")
       .select("timestamp, open, high, low, close, volume")
-      .eq("symbol", "EUR/USD")
+      .eq("symbol", symbol)
       .eq("timeframe", timeframe)
       .order("timestamp", { ascending: true })
       .limit(300);
@@ -160,7 +201,7 @@ serve(async (req) => {
 
     return {
       success: true,
-      symbol: "EUR/USD",
+      symbol,
       currentPrice,
       candles,
       candleCount: candles.length,
@@ -168,11 +209,11 @@ serve(async (req) => {
     };
   };
 
-  const getLatestCachedTimestamp = async (timeframe: string): Promise<Date | null> => {
+  const getLatestCachedTimestamp = async (symbol: string, timeframe: string): Promise<Date | null> => {
     const { data, error } = await supabase
       .from("price_history")
       .select("timestamp")
-      .eq("symbol", "EUR/USD")
+      .eq("symbol", symbol)
       .eq("timeframe", timeframe)
       .order("timestamp", { ascending: false })
       .limit(1);
@@ -186,6 +227,7 @@ serve(async (req) => {
 
   // Fetch with retry using different API keys
   const fetchWithKeyRotation = async (
+    symbol: string,
     interval: string, 
     outputsize: number, 
     keys: string[]
@@ -194,16 +236,16 @@ serve(async (req) => {
     
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const { key, index } = selectApiKey(keys, attempt);
-      console.log(`API attempt ${attempt + 1}/${maxAttempts} using key index ${index}`);
+      console.log(`API attempt ${attempt + 1}/${maxAttempts} using key index ${index} for ${symbol}`);
       
       try {
-        const url = `https://api.twelvedata.com/time_series?symbol=EUR/USD&interval=${interval}&outputsize=${outputsize}&apikey=${key}`;
+        const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${outputsize}&apikey=${key}`;
         const response = await fetch(url);
         const data = await response.json().catch(() => ({}));
         
         if (!response.ok || data?.status === "error") {
           const message = String(data?.message || `Twelve Data request failed (status ${response.status})`);
-          console.error(`Key ${index} error:`, message);
+          console.error(`Key ${index} error for ${symbol}:`, message);
           
           // If quota error, try next key
           if (isTwelveDataQuotaError(message)) {
@@ -216,10 +258,10 @@ serve(async (req) => {
         }
         
         // Success!
-        console.log(`Successfully fetched with key index ${index}`);
+        console.log(`Successfully fetched ${symbol} with key index ${index}`);
         return { data, keyIndex: index };
       } catch (err) {
-        console.error(`Key ${index} fetch error:`, err);
+        console.error(`Key ${index} fetch error for ${symbol}:`, err);
         continue;
       }
     }
@@ -229,18 +271,17 @@ serve(async (req) => {
   };
 
   try {
-    const body = await req.json().catch(() => ({}));
     const timeframeRaw = (body?.timeframe ?? "1h") as Timeframe;
     const { interval, normalizedTimeframe } = normalizeInterval(timeframeRaw);
 
     const outputsize = clampOutputsize(body?.outputsize, defaultOutputsizeFor(normalizedTimeframe));
 
     // 1) Serve cache if it's fresh enough (prevents burning credits for repeated polling)
-    const latestCached = await getLatestCachedTimestamp(normalizedTimeframe);
+    const latestCached = await getLatestCachedTimestamp(dbSymbol, normalizedTimeframe);
     if (latestCached) {
       const ageMs = Date.now() - latestCached.getTime();
       if (ageMs >= 0 && ageMs < cacheFreshnessMs(normalizedTimeframe)) {
-        const cached = await readCache(normalizedTimeframe, "Serving cached data to reduce API usage");
+        const cached = await readCache(dbSymbol, normalizedTimeframe, "Serving cached data to reduce API usage");
         if (cached) {
           return new Response(JSON.stringify(cached), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -252,7 +293,7 @@ serve(async (req) => {
     const apiKeys = getApiKeys();
     if (apiKeys.length === 0) {
       // If API keys missing, try cache anyway.
-      const cached = await readCache(normalizedTimeframe, "API key missing; serving cache");
+      const cached = await readCache(dbSymbol, normalizedTimeframe, "API key missing; serving cache");
       if (cached) {
         return new Response(JSON.stringify(cached), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -265,17 +306,18 @@ serve(async (req) => {
     }
 
     console.log(
-      `Fetching EUR/USD data with timeframe: ${normalizedTimeframe} (interval ${interval}), outputsize: ${outputsize}, keys available: ${apiKeys.length}`,
+      `Fetching ${dbSymbol} data with timeframe: ${normalizedTimeframe} (interval ${interval}), outputsize: ${outputsize}, keys available: ${apiKeys.length}`,
     );
 
-    const fetchResult = await fetchWithKeyRotation(interval, outputsize, apiKeys);
+    const fetchResult = await fetchWithKeyRotation(apiSymbol, interval, outputsize, apiKeys);
     
     if ('error' in fetchResult) {
       console.error("Twelve Data API error:", fetchResult.error);
 
       // If quota/rate-limited, serve cached data instead of returning 500
       if (fetchResult.isQuotaError) {
-        const cached = (await readCache(normalizedTimeframe, fetchResult.error)) ?? (await readCache("1h", fetchResult.error));
+        const cached = (await readCache(dbSymbol, normalizedTimeframe, fetchResult.error)) ?? 
+                       (await readCache(dbSymbol, "1h", fetchResult.error));
         if (cached) {
           return new Response(JSON.stringify(cached), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -294,7 +336,8 @@ serve(async (req) => {
       }
 
       // Other API errors: attempt cache fallback, otherwise return 200 with error
-      const cached = (await readCache(normalizedTimeframe, fetchResult.error)) ?? (await readCache("1h", fetchResult.error));
+      const cached = (await readCache(dbSymbol, normalizedTimeframe, fetchResult.error)) ?? 
+                     (await readCache(dbSymbol, "1h", fetchResult.error));
       if (cached) {
         return new Response(JSON.stringify(cached), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -315,8 +358,8 @@ serve(async (req) => {
     if (!data?.values || !Array.isArray(data.values)) {
       console.error("Unexpected response format:", data);
 
-      const cached = (await readCache(normalizedTimeframe, "Invalid API response format")) ??
-        (await readCache("1h", "Invalid API response format"));
+      const cached = (await readCache(dbSymbol, normalizedTimeframe, "Invalid API response format")) ??
+        (await readCache(dbSymbol, "1h", "Invalid API response format"));
       if (cached) {
         return new Response(JSON.stringify(cached), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -329,7 +372,7 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Received ${data.values.length} candles from Twelve Data (key ${fetchResult.keyIndex})`);
+    console.log(`Received ${data.values.length} candles for ${dbSymbol} from Twelve Data (key ${fetchResult.keyIndex})`);
 
     const candles = data.values
       .map((candle: any) => ({
@@ -346,7 +389,7 @@ serve(async (req) => {
 
     // Cache last 300 candles in backend DB for deeper analysis
     const priceHistoryData = candles.slice(-300).map((c: any) => ({
-      symbol: "EUR/USD",
+      symbol: dbSymbol,
       timestamp: c.timestamp,
       open: c.open,
       high: c.high,
@@ -356,7 +399,8 @@ serve(async (req) => {
       timeframe: normalizedTimeframe,
     }));
 
-    await supabase.from("price_history").delete().eq("symbol", "EUR/USD").eq("timeframe", normalizedTimeframe);
+    // Delete old cache for this specific symbol and timeframe
+    await supabase.from("price_history").delete().eq("symbol", dbSymbol).eq("timeframe", normalizedTimeframe);
 
     const { error: insertError } = await supabase.from("price_history").insert(priceHistoryData);
     if (insertError) {
@@ -366,7 +410,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        symbol: "EUR/USD",
+        symbol: dbSymbol,
         currentPrice,
         candles,
         candleCount: candles.length,
@@ -378,8 +422,8 @@ serve(async (req) => {
     console.error("Error fetching forex data:", error);
 
     // Final attempt: return any cached data we have.
-    const cached = (await readCache("1h", error instanceof Error ? error.message : "Unknown error")) ??
-      (await readCache("4h", error instanceof Error ? error.message : "Unknown error"));
+    const cached = (await readCache(dbSymbol, "1h", error instanceof Error ? error.message : "Unknown error")) ??
+      (await readCache(dbSymbol, "4h", error instanceof Error ? error.message : "Unknown error"));
     if (cached) {
       return new Response(JSON.stringify(cached), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

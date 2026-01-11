@@ -6,6 +6,42 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Supported currency pairs for scanning
+const SUPPORTED_PAIRS = [
+  "EUR/USD",
+  "GBP/USD", 
+  "USD/JPY",
+  "USD/CHF",
+  "AUD/USD",
+  "USD/CAD",
+  "EUR/JPY",
+  "GBP/JPY",
+  "AUD/JPY",
+  "XAU/USD",
+];
+
+// Pip values for different pairs (used for duplicate detection and level calculation)
+const PIP_VALUES: Record<string, number> = {
+  "EUR/USD": 0.0001,
+  "GBP/USD": 0.0001,
+  "USD/JPY": 0.01,
+  "USD/CHF": 0.0001,
+  "AUD/USD": 0.0001,
+  "USD/CAD": 0.0001,
+  "EUR/JPY": 0.01,
+  "GBP/JPY": 0.01,
+  "AUD/JPY": 0.01,
+  "XAU/USD": 0.01, // Gold uses different pip value
+};
+
+function getPipValue(symbol: string): number {
+  return PIP_VALUES[symbol] || 0.0001;
+}
+
+function priceToPips(price: number, symbol: string): number {
+  return price / getPipValue(symbol);
+}
+
 interface Candle {
   timestamp: string;
   open: number;
@@ -314,11 +350,15 @@ function analyzeOpportunity(
   indicators: TechnicalIndicators,
   patterns: string[],
   currentPrice: number,
-  patternStats: any[]
+  patternStats: any[],
+  symbol: string
 ): { signal: 'BUY' | 'SELL' | null; confidence: number; reasons: string[]; patternData: any[] } {
   const buyPatterns: PatternDetection[] = [];
   const sellPatterns: PatternDetection[] = [];
   const matchedPatternStats: any[] = [];
+  
+  // Filter pattern stats for this symbol (or use general if not found)
+  const symbolStats = patternStats.filter(p => p.symbol === symbol || p.symbol === null);
   
   // Detect patterns and classify by tier
   
@@ -331,7 +371,7 @@ function analyzeOpportunity(
       weight: PATTERN_WEIGHTS.rsi_oversold.weight,
       reason: 'RSI oversold (<30) - Tier 1 signal'
     });
-    const stat = patternStats.find(p => p.pattern_name === 'rsi_oversold');
+    const stat = symbolStats.find(p => p.pattern_name === 'rsi_oversold');
     if (stat) matchedPatternStats.push(stat);
   } else if (indicators.rsi < 40) {
     buyPatterns.push({ 
@@ -351,7 +391,7 @@ function analyzeOpportunity(
       weight: PATTERN_WEIGHTS.rsi_overbought.weight,
       reason: 'RSI overbought (>70) - Tier 1 signal'
     });
-    const stat = patternStats.find(p => p.pattern_name === 'rsi_overbought');
+    const stat = symbolStats.find(p => p.pattern_name === 'rsi_overbought');
     if (stat) matchedPatternStats.push(stat);
   } else if (indicators.rsi > 60) {
     sellPatterns.push({ 
@@ -372,7 +412,7 @@ function analyzeOpportunity(
       weight: PATTERN_WEIGHTS.bb_lower_touch.weight,
       reason: 'Price below lower Bollinger Band - Tier 1 signal'
     });
-    const stat = patternStats.find(p => p.pattern_name === 'bb_lower_touch');
+    const stat = symbolStats.find(p => p.pattern_name === 'bb_lower_touch');
     if (stat) matchedPatternStats.push(stat);
   }
   
@@ -384,7 +424,7 @@ function analyzeOpportunity(
       weight: PATTERN_WEIGHTS.bb_upper_touch.weight,
       reason: 'Price above upper Bollinger Band - Tier 1 signal'
     });
-    const stat = patternStats.find(p => p.pattern_name === 'bb_upper_touch');
+    const stat = symbolStats.find(p => p.pattern_name === 'bb_upper_touch');
     if (stat) matchedPatternStats.push(stat);
   }
   
@@ -418,7 +458,7 @@ function analyzeOpportunity(
       weight: PATTERN_WEIGHTS.macd_bullish_cross.weight,
       reason: 'MACD bullish crossover - Tier 3 (weak)'
     });
-    const stat = patternStats.find(p => p.pattern_name === 'macd_bullish_cross');
+    const stat = symbolStats.find(p => p.pattern_name === 'macd_bullish_cross');
     if (stat) matchedPatternStats.push(stat);
   }
   
@@ -430,7 +470,7 @@ function analyzeOpportunity(
       weight: PATTERN_WEIGHTS.macd_bearish_cross.weight,
       reason: 'MACD bearish crossover - Tier 3 (weak)'
     });
-    const stat = patternStats.find(p => p.pattern_name === 'macd_bearish_cross');
+    const stat = symbolStats.find(p => p.pattern_name === 'macd_bearish_cross');
     if (stat) matchedPatternStats.push(stat);
   }
   
@@ -448,7 +488,7 @@ function analyzeOpportunity(
       weight: PATTERN_WEIGHTS.golden_cross.weight,
       reason: 'Golden Cross alignment - Tier 4 (historically <46% win rate)'
     });
-    const stat = patternStats.find(p => p.pattern_name === 'golden_cross');
+    const stat = symbolStats.find(p => p.pattern_name === 'golden_cross');
     if (stat) matchedPatternStats.push(stat);
   } else if (!priceAboveEma21 && !priceAboveEma50 && !ema21AboveEma50) {
     // Death cross - historically harmful, penalize
@@ -459,7 +499,7 @@ function analyzeOpportunity(
       weight: PATTERN_WEIGHTS.death_cross.weight,
       reason: 'Death Cross alignment - Tier 4 (historically <46% win rate)'
     });
-    const stat = patternStats.find(p => p.pattern_name === 'death_cross');
+    const stat = symbolStats.find(p => p.pattern_name === 'death_cross');
     if (stat) matchedPatternStats.push(stat);
   }
   
@@ -473,7 +513,7 @@ function analyzeOpportunity(
         weight: PATTERN_WEIGHTS.bullish_engulfing.weight,
         reason: 'Bullish Engulfing - Tier 3 (48% win rate)'
       });
-      const stat = patternStats.find(s => s.pattern_name === 'bullish_engulfing');
+      const stat = symbolStats.find(s => s.pattern_name === 'bullish_engulfing');
       if (stat && !matchedPatternStats.includes(stat)) matchedPatternStats.push(stat);
     }
     if (p.includes('Bearish') && p.includes('Engulfing')) {
@@ -484,7 +524,7 @@ function analyzeOpportunity(
         weight: PATTERN_WEIGHTS.bearish_engulfing.weight,
         reason: 'Bearish Engulfing - Tier 3 (48% win rate)'
       });
-      const stat = patternStats.find(s => s.pattern_name === 'bearish_engulfing');
+      const stat = symbolStats.find(s => s.pattern_name === 'bearish_engulfing');
       if (stat && !matchedPatternStats.includes(stat)) matchedPatternStats.push(stat);
     }
   });
@@ -499,7 +539,7 @@ function analyzeOpportunity(
   const buyTier4Count = buyPatterns.filter(p => p.tier === 4).length;
   const sellTier4Count = sellPatterns.filter(p => p.tier === 4).length;
   
-  console.log(`Pattern analysis: BUY score=${buyScore.toFixed(2)} (${buyTier1Count} T1, ${buyTier4Count} T4), SELL score=${sellScore.toFixed(2)} (${sellTier1Count} T1, ${sellTier4Count} T4)`);
+  console.log(`[${symbol}] Pattern analysis: BUY score=${buyScore.toFixed(2)} (${buyTier1Count} T1, ${buyTier4Count} T4), SELL score=${sellScore.toFixed(2)} (${sellTier1Count} T1, ${sellTier4Count} T4)`);
   
   // Decision logic:
   // 1. REQUIRE at least one Tier 1 pattern
@@ -566,7 +606,7 @@ function analyzeOpportunity(
   
   // If no Tier 1 pattern, log why we're rejecting
   if (!signal) {
-    console.log(`No signal: BUY T1=${buyTier1Count}, SELL T1=${sellTier1Count}, threshold=${SCORE_THRESHOLD}`);
+    console.log(`[${symbol}] No signal: BUY T1=${buyTier1Count}, SELL T1=${sellTier1Count}, threshold=${SCORE_THRESHOLD}`);
   }
   
   // Clamp confidence
@@ -629,13 +669,230 @@ function calculateLevels(
   }
 }
 
+// Scan a single symbol for opportunities
+async function scanSymbol(
+  supabase: any,
+  symbol: string,
+  patternStats: any[]
+): Promise<{ success: boolean; opportunity?: any; message: string }> {
+  console.log(`\n========== Scanning ${symbol} ==========`);
+  
+  // Fetch price data from cache
+  const { data: priceData, error: priceError } = await supabase
+    .from('price_history')
+    .select('*')
+    .eq('symbol', symbol)
+    .eq('timeframe', '1h')
+    .order('timestamp', { ascending: true })
+    .limit(200);
+
+  if (priceError || !priceData || priceData.length < 50) {
+    console.log(`[${symbol}] Not enough price data: ${priceError?.message || `Only ${priceData?.length || 0} candles`}`);
+    return { success: false, message: `Not enough price data for ${symbol}` };
+  }
+
+  console.log(`[${symbol}] Analyzing ${priceData.length} candles...`);
+
+  // Transform to candle format
+  const candles: Candle[] = priceData.map((p: any) => ({
+    timestamp: p.timestamp,
+    open: Number(p.open),
+    high: Number(p.high),
+    low: Number(p.low),
+    close: Number(p.close),
+    volume: p.volume ? Number(p.volume) : undefined
+  }));
+
+  const currentPrice = candles[candles.length - 1].close;
+  
+  // Calculate indicators and detect patterns
+  const indicators = calculateIndicators(candles);
+  const patterns = detectPatterns(candles);
+  
+  console.log(`[${symbol}] Indicators:`, JSON.stringify({
+    rsi: indicators.rsi.toFixed(2),
+    macd: indicators.macd.histogram.toFixed(5),
+    stochastic: indicators.stochastic.k.toFixed(2)
+  }));
+  console.log(`[${symbol}] Patterns:`, patterns);
+
+  // Analyze for opportunity
+  const analysis = analyzeOpportunity(indicators, patterns, currentPrice, patternStats, symbol);
+  
+  console.log(`[${symbol}] Analysis result:`, {
+    signal: analysis.signal,
+    confidence: analysis.confidence,
+    reasons: analysis.reasons.length
+  });
+
+  // Only create opportunity if conditions are met
+  if (!analysis.signal || analysis.confidence < 60 || analysis.reasons.length < 2) {
+    console.log(`[${symbol}] No high-probability opportunity detected`);
+    return { 
+      success: true, 
+      message: `No high-probability opportunity for ${symbol}`
+    };
+  }
+
+  // Check for conflicting active signals (opposite direction)
+  const oppositeSignal = analysis.signal === 'BUY' ? 'SELL' : 'BUY';
+  const { data: conflictingOpps } = await supabase
+    .from('trading_opportunities')
+    .select('id, signal_type, confidence, created_at, entry_price')
+    .eq('status', 'ACTIVE')
+    .eq('symbol', symbol)
+    .eq('signal_type', oppositeSignal);
+
+  let isSignalReversal = false;
+  let previousSignal: { signal_type: string; confidence: number; created_at: string } | null = null;
+
+  if (conflictingOpps && conflictingOpps.length > 0) {
+    const mostRecentConflict = conflictingOpps[0];
+    const conflictAge = Date.now() - new Date(mostRecentConflict.created_at).getTime();
+    const oneHourMs = 60 * 60 * 1000;
+
+    // Cooldown: require 1 hour OR 10%+ higher confidence to reverse
+    if (conflictAge < oneHourMs && analysis.confidence < mostRecentConflict.confidence + 10) {
+      console.log(`[${symbol}] Cooldown active: ${oppositeSignal} signal from ${mostRecentConflict.created_at} is less than 1 hour old`);
+      return { 
+        success: true, 
+        message: `Cooldown active for ${symbol}`
+      };
+    }
+
+    // Expire conflicting signals
+    console.log(`[${symbol}] Expiring ${conflictingOpps.length} conflicting ${oppositeSignal} signal(s) due to reversal`);
+    await supabase
+      .from('trading_opportunities')
+      .update({ status: 'EXPIRED', outcome: 'EXPIRED' })
+      .eq('status', 'ACTIVE')
+      .eq('symbol', symbol)
+      .eq('signal_type', oppositeSignal);
+
+    isSignalReversal = true;
+    previousSignal = {
+      signal_type: mostRecentConflict.signal_type,
+      confidence: mostRecentConflict.confidence,
+      created_at: mostRecentConflict.created_at
+    };
+  }
+
+  // Enhanced duplicate check - look at recent opportunities (4 hours)
+  const { data: recentOpps } = await supabase
+    .from('trading_opportunities')
+    .select('id, signal_type, entry_price, created_at, status')
+    .eq('symbol', symbol)
+    .eq('signal_type', analysis.signal)
+    .gte('created_at', new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString());
+
+  if (recentOpps && recentOpps.length > 0) {
+    // Check if price has moved significantly (at least 15 pips)
+    const mostRecent = recentOpps[0];
+    const priceDiff = Math.abs(currentPrice - mostRecent.entry_price);
+    const pipValue = getPipValue(symbol);
+    const pipsDiff = priceDiff / pipValue;
+    
+    if (pipsDiff < 15) {
+      console.log(`[${symbol}] Similar opportunity exists (${pipsDiff.toFixed(1)} pips difference, need 15+)`);
+      return { 
+        success: true, 
+        message: `Similar ${analysis.signal} opportunity exists for ${symbol}`
+      };
+    }
+    
+    console.log(`[${symbol}] Price moved ${pipsDiff.toFixed(1)} pips since last ${analysis.signal} signal - creating new opportunity`);
+  }
+
+  // Calculate entry levels with dynamic R:R based on confidence
+  const levels = calculateLevels(currentPrice, indicators.atr, analysis.signal, analysis.confidence);
+
+  // Build reasoning
+  const reasoning = `${analysis.signal} opportunity detected on ${symbol} with ${analysis.confidence.toFixed(0)}% confidence.\n\n` +
+    `Confirming factors:\n${analysis.reasons.map(r => `• ${r}`).join('\n')}\n\n` +
+    `Technical snapshot:\n` +
+    `• RSI: ${indicators.rsi.toFixed(1)}\n` +
+    `• MACD Histogram: ${indicators.macd.histogram > 0 ? '+' : ''}${indicators.macd.histogram.toFixed(5)}\n` +
+    `• Stochastic %K: ${indicators.stochastic.k.toFixed(1)}\n` +
+    `• ATR: ${indicators.atr.toFixed(5)}`;
+
+  // Insert opportunity
+  const expiresAt = new Date(Date.now() + 4 * 60 * 60 * 1000); // 4 hours
+
+  const { data: newOpp, error: insertError } = await supabase
+    .from('trading_opportunities')
+    .insert({
+      symbol,
+      signal_type: analysis.signal,
+      confidence: analysis.confidence,
+      entry_price: currentPrice,
+      current_price: currentPrice,
+      stop_loss: levels.stopLoss,
+      take_profit_1: levels.takeProfit1,
+      take_profit_2: levels.takeProfit2,
+      patterns_detected: patterns,
+      technical_indicators: indicators,
+      pattern_stats: analysis.patternData,
+      reasoning,
+      status: 'ACTIVE',
+      expires_at: expiresAt.toISOString()
+    })
+    .select()
+    .single();
+
+  if (insertError) {
+    console.error(`[${symbol}] Failed to insert opportunity:`, insertError);
+    return { success: false, message: `Failed to save opportunity for ${symbol}` };
+  }
+
+  console.log(`[${symbol}] Created new opportunity:`, newOpp.id);
+
+  // Send Telegram notification for new opportunity
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    
+    await fetch(`${supabaseUrl}/functions/v1/send-telegram-notification`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseAnonKey}`,
+      },
+      body: JSON.stringify({
+        symbol,
+        signal_type: newOpp.signal_type,
+        confidence: newOpp.confidence,
+        entry_price: newOpp.entry_price,
+        stop_loss: newOpp.stop_loss,
+        take_profit_1: newOpp.take_profit_1,
+        take_profit_2: newOpp.take_profit_2,
+        reasoning: newOpp.reasoning,
+        is_reversal: isSignalReversal,
+        previous_signal: previousSignal,
+      }),
+    });
+    console.log(`[${symbol}] Telegram notification sent for opportunity:`, newOpp.id, isSignalReversal ? "(REVERSAL)" : "");
+  } catch (notifyError) {
+    console.error(`[${symbol}] Failed to send Telegram notification:`, notifyError);
+  }
+
+  return { 
+    success: true, 
+    opportunity: newOpp,
+    message: `New ${analysis.signal} opportunity for ${symbol}!`
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    console.log("Starting opportunity scan...");
+    console.log("Starting multi-currency opportunity scan...");
+    
+    // Parse request body for optional symbol filter
+    const body = await req.json().catch(() => ({}));
+    const requestedSymbols: string[] = body?.symbols || body?.symbol ? [body.symbol] : SUPPORTED_PAIRS;
     
     // Check market status
     const marketStatus = isForexMarketOpen();
@@ -652,244 +909,44 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Expire old opportunities
+    // Expire old opportunities (all symbols)
     await supabase
       .from('trading_opportunities')
       .update({ status: 'EXPIRED' })
       .eq('status', 'ACTIVE')
       .lt('expires_at', new Date().toISOString());
 
-    // Fetch price data from cache
-    const { data: priceData, error: priceError } = await supabase
-      .from('price_history')
-      .select('*')
-      .eq('symbol', 'EUR/USD')
-      .eq('timeframe', '1h')
-      .order('timestamp', { ascending: true })
-      .limit(200);
-
-    if (priceError || !priceData || priceData.length < 50) {
-      console.log("Not enough price data:", priceError?.message || `Only ${priceData?.length || 0} candles`);
-      return new Response(
-        JSON.stringify({ success: true, message: "Not enough price data for analysis", scanned: false }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log(`Analyzing ${priceData.length} candles...`);
-
-    // Transform to candle format
-    const candles: Candle[] = priceData.map(p => ({
-      timestamp: p.timestamp,
-      open: Number(p.open),
-      high: Number(p.high),
-      low: Number(p.low),
-      close: Number(p.close),
-      volume: p.volume ? Number(p.volume) : undefined
-    }));
-
-    const currentPrice = candles[candles.length - 1].close;
-    
-    // Calculate indicators and detect patterns
-    const indicators = calculateIndicators(candles);
-    const patterns = detectPatterns(candles);
-    
-    console.log("Indicators:", JSON.stringify({
-      rsi: indicators.rsi.toFixed(2),
-      macd: indicators.macd.histogram.toFixed(5),
-      stochastic: indicators.stochastic.k.toFixed(2)
-    }));
-    console.log("Patterns:", patterns);
-
-    // Fetch pattern statistics
+    // Fetch pattern statistics (all symbols)
     const { data: patternStats } = await supabase
       .from('pattern_statistics')
       .select('*');
 
-    // Analyze for opportunity
-    const analysis = analyzeOpportunity(indicators, patterns, currentPrice, patternStats || []);
+    // Scan each symbol
+    const results: { symbol: string; opportunity?: any; message: string }[] = [];
+    const newOpportunities: any[] = [];
     
-    console.log("Analysis result:", {
-      signal: analysis.signal,
-      confidence: analysis.confidence,
-      reasons: analysis.reasons.length
-    });
-
-    // Only create opportunity if conditions are met (tier-based strategy)
-    // - Signal is BUY or SELL (requires Tier 1 pattern)
-    // - Confidence >= 60% (now enforced by tier system)
-    // - At least 2 confirming reasons
-    if (!analysis.signal || analysis.confidence < 60 || analysis.reasons.length < 2) {
-      console.log("No high-probability opportunity detected");
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: "No high-probability opportunity detected", 
-          scanned: true,
-          analysis: {
-            bestSignal: analysis.signal,
-            confidence: analysis.confidence,
-            reasons: analysis.reasons.length
-          }
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Check for conflicting active signals (opposite direction)
-    const oppositeSignal = analysis.signal === 'BUY' ? 'SELL' : 'BUY';
-    const { data: conflictingOpps } = await supabase
-      .from('trading_opportunities')
-      .select('id, signal_type, confidence, created_at, entry_price')
-      .eq('status', 'ACTIVE')
-      .eq('signal_type', oppositeSignal);
-
-    let isSignalReversal = false;
-    let previousSignal: { signal_type: string; confidence: number; created_at: string } | null = null;
-
-    if (conflictingOpps && conflictingOpps.length > 0) {
-      const mostRecentConflict = conflictingOpps[0];
-      const conflictAge = Date.now() - new Date(mostRecentConflict.created_at).getTime();
-      const oneHourMs = 60 * 60 * 1000;
-
-      // Cooldown: require 1 hour OR 10%+ higher confidence to reverse
-      if (conflictAge < oneHourMs && analysis.confidence < mostRecentConflict.confidence + 10) {
-        console.log(`Cooldown active: ${oppositeSignal} signal from ${mostRecentConflict.created_at} is less than 1 hour old`);
-        return new Response(
-          JSON.stringify({ 
-            success: true, 
-            message: `Cooldown active: Recent ${oppositeSignal} signal (${mostRecentConflict.confidence.toFixed(0)}%) is less than 1 hour old. Need 10%+ higher confidence to reverse.`, 
-            scanned: true,
-            cooldownRemaining: Math.ceil((oneHourMs - conflictAge) / 60000) + ' minutes'
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+    for (const symbol of requestedSymbols) {
+      const result = await scanSymbol(supabase, symbol, patternStats || []);
+      results.push({ symbol, ...result });
+      if (result.opportunity) {
+        newOpportunities.push(result.opportunity);
       }
-
-      // Expire conflicting signals
-      console.log(`Expiring ${conflictingOpps.length} conflicting ${oppositeSignal} signal(s) due to reversal`);
-      await supabase
-        .from('trading_opportunities')
-        .update({ status: 'EXPIRED', outcome: 'EXPIRED' })
-        .eq('status', 'ACTIVE')
-        .eq('signal_type', oppositeSignal);
-
-      isSignalReversal = true;
-      previousSignal = {
-        signal_type: mostRecentConflict.signal_type,
-        confidence: mostRecentConflict.confidence,
-        created_at: mostRecentConflict.created_at
-      };
     }
 
-    // Enhanced duplicate check - look at recent opportunities (4 hours) regardless of status
-    // and require significant price movement before creating new opportunity
-    const { data: recentOpps } = await supabase
-      .from('trading_opportunities')
-      .select('id, signal_type, entry_price, created_at, status')
-      .eq('signal_type', analysis.signal)
-      .gte('created_at', new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString()); // Last 4 hours
-
-    if (recentOpps && recentOpps.length > 0) {
-      // Check if price has moved significantly (at least 15 pips)
-      const mostRecent = recentOpps[0];
-      const priceDiff = Math.abs(currentPrice - mostRecent.entry_price);
-      const pipsDiff = priceDiff * 10000; // Convert to pips for EUR/USD
-      
-      if (pipsDiff < 15) {
-        console.log(`Similar opportunity exists (${pipsDiff.toFixed(1)} pips difference, need 15+)`);
-        return new Response(
-          JSON.stringify({ 
-            success: true, 
-            message: `Similar ${analysis.signal} opportunity exists from ${mostRecent.created_at} (only ${pipsDiff.toFixed(1)} pips apart)`, 
-            scanned: true,
-            existingOpportunity: mostRecent.id,
-            priceDifference: pipsDiff.toFixed(1)
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      
-      console.log(`Price moved ${pipsDiff.toFixed(1)} pips since last ${analysis.signal} signal - creating new opportunity`);
-    }
-
-    // Calculate entry levels with dynamic R:R based on confidence
-    const levels = calculateLevels(currentPrice, indicators.atr, analysis.signal, analysis.confidence);
-
-    // Build reasoning
-    const reasoning = `${analysis.signal} opportunity detected with ${analysis.confidence.toFixed(0)}% confidence.\n\n` +
-      `Confirming factors:\n${analysis.reasons.map(r => `• ${r}`).join('\n')}\n\n` +
-      `Technical snapshot:\n` +
-      `• RSI: ${indicators.rsi.toFixed(1)}\n` +
-      `• MACD Histogram: ${indicators.macd.histogram > 0 ? '+' : ''}${indicators.macd.histogram.toFixed(5)}\n` +
-      `• Stochastic %K: ${indicators.stochastic.k.toFixed(1)}\n` +
-      `• ATR: ${indicators.atr.toFixed(5)}`;
-
-    // Insert opportunity
-    const expiresAt = new Date(Date.now() + 4 * 60 * 60 * 1000); // 4 hours
-
-    const { data: newOpp, error: insertError } = await supabase
-      .from('trading_opportunities')
-      .insert({
-        signal_type: analysis.signal,
-        confidence: analysis.confidence,
-        entry_price: currentPrice,
-        current_price: currentPrice,
-        stop_loss: levels.stopLoss,
-        take_profit_1: levels.takeProfit1,
-        take_profit_2: levels.takeProfit2,
-        patterns_detected: patterns,
-        technical_indicators: indicators,
-        pattern_stats: analysis.patternData,
-        reasoning,
-        status: 'ACTIVE',
-        expires_at: expiresAt.toISOString()
-      })
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error("Failed to insert opportunity:", insertError);
-      throw new Error("Failed to save opportunity");
-    }
-
-    console.log("Created new opportunity:", newOpp.id);
-
-    // Send Telegram notification for new opportunity
-    try {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-      
-      await fetch(`${supabaseUrl}/functions/v1/send-telegram-notification`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseAnonKey}`,
-        },
-        body: JSON.stringify({
-          signal_type: newOpp.signal_type,
-          confidence: newOpp.confidence,
-          entry_price: newOpp.entry_price,
-          stop_loss: newOpp.stop_loss,
-          take_profit_1: newOpp.take_profit_1,
-          take_profit_2: newOpp.take_profit_2,
-          reasoning: newOpp.reasoning,
-          is_reversal: isSignalReversal,
-          previous_signal: previousSignal,
-        }),
-      });
-      console.log("Telegram notification sent for opportunity:", newOpp.id, isSignalReversal ? "(REVERSAL)" : "");
-    } catch (notifyError) {
-      console.error("Failed to send Telegram notification:", notifyError);
-      // Don't fail the whole request if notification fails
-    }
+    console.log(`\n========== Scan Complete ==========`);
+    console.log(`Scanned ${requestedSymbols.length} pairs, found ${newOpportunities.length} opportunities`);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: "New opportunity detected!", 
+        message: newOpportunities.length > 0 
+          ? `Found ${newOpportunities.length} new opportunity(ies)!` 
+          : "No high-probability opportunities detected",
         scanned: true,
-        opportunity: newOpp
+        symbolsScanned: requestedSymbols.length,
+        opportunitiesFound: newOpportunities.length,
+        opportunities: newOpportunities,
+        results
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
