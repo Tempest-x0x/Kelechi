@@ -6,22 +6,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Supported currency pairs for scanning
-const SUPPORTED_PAIRS = [
-  "EUR/USD",
-  "GBP/USD", 
-  "USD/JPY",
-  "USD/CHF",
-  "AUD/USD",
-  "USD/CAD",
-  "EUR/JPY",
-  "GBP/JPY",
-  "AUD/JPY",
-  "XAU/USD",
-];
-
-// Pip values for different pairs (used for duplicate detection and level calculation)
-const PIP_VALUES: Record<string, number> = {
+// Default pip values (overridden by database values when available)
+const DEFAULT_PIP_VALUES: Record<string, number> = {
   "EUR/USD": 0.0001,
   "GBP/USD": 0.0001,
   "USD/JPY": 0.01,
@@ -31,11 +17,43 @@ const PIP_VALUES: Record<string, number> = {
   "EUR/JPY": 0.01,
   "GBP/JPY": 0.01,
   "AUD/JPY": 0.01,
-  "XAU/USD": 0.01, // Gold uses different pip value
+  "XAU/USD": 0.01,
+  "EUR/CHF": 0.0001,
+  "EUR/GBP": 0.0001,
 };
 
+interface CurrencyPairConfig {
+  symbol: string;
+  pip_value: number;
+}
+
+// Dynamic pip values (populated from database)
+let dynamicPipValues: Record<string, number> = {};
+
 function getPipValue(symbol: string): number {
-  return PIP_VALUES[symbol] || 0.0001;
+  return dynamicPipValues[symbol] || DEFAULT_PIP_VALUES[symbol] || 0.0001;
+}
+
+// Fetch active currency pairs from database
+async function getActiveCurrencyPairs(supabase: any): Promise<CurrencyPairConfig[]> {
+  const { data, error } = await supabase
+    .from('supported_currency_pairs')
+    .select('symbol, pip_value')
+    .eq('is_active', true);
+  
+  if (error) {
+    console.error('Failed to fetch currency pairs:', error);
+    return [];
+  }
+  
+  // Update dynamic pip values
+  dynamicPipValues = {};
+  for (const pair of data || []) {
+    dynamicPipValues[pair.symbol] = Number(pair.pip_value);
+  }
+  
+  console.log(`Loaded ${data?.length || 0} active currency pairs from database`);
+  return data || [];
 }
 
 function priceToPips(price: number, symbol: string): number {
@@ -308,13 +326,10 @@ function calculateIndicators(candles: Candle[]): TechnicalIndicators {
   };
 }
 
-// Pattern Tier System based on 25 years historical data
-// Tier 1: Proven winners (>52% win rate) - Required for signals
-// Tier 2: Neutral (50-52%) - Standard weight  
-// Tier 3: Weak (<50%) - Reduced weight
-// Tier 4: Actively harmful (<47%) - Penalize
-const PATTERN_WEIGHTS = {
-  // Tier 1: Proven winners
+// Base pattern weights (fallback when no stats available)
+// These are used as defaults and get overridden by dynamic weights from DB
+const BASE_PATTERN_WEIGHTS = {
+  // Tier 1: Proven winners (base)
   rsi_oversold: { weight: 1.5, tier: 1, expectedWinRate: 52.4 },
   rsi_overbought: { weight: 1.5, tier: 1, expectedWinRate: 52.16 },
   bb_lower_touch: { weight: 1.3, tier: 1, expectedWinRate: 52.06 },
@@ -335,7 +350,48 @@ const PATTERN_WEIGHTS = {
   death_cross: { weight: -0.5, tier: 4, expectedWinRate: 45.87 },
 } as const;
 
-type PatternName = keyof typeof PATTERN_WEIGHTS;
+type PatternName = keyof typeof BASE_PATTERN_WEIGHTS;
+
+// Calculate dynamic weight and tier based on actual win rate from database
+function getDynamicPatternWeight(
+  patternName: PatternName, 
+  winRate: number | null
+): { weight: number; tier: number } {
+  const baseWeight = BASE_PATTERN_WEIGHTS[patternName];
+  
+  // If no win rate data, use base weights
+  if (winRate === null || winRate === undefined) {
+    return { weight: baseWeight.weight, tier: baseWeight.tier };
+  }
+  
+  // Dynamic tier based on ACTUAL win rate:
+  // Tier 1: >52% win rate (statistically significant edge)
+  // Tier 2: 50-52% (neutral)
+  // Tier 3: 48-50% (weak)
+  // Tier 4: <48% (harmful)
+  let tier: number;
+  let weight: number;
+  
+  if (winRate > 52) {
+    tier = 1;
+    // Scale weight: 52%->1.3, 55%->1.6, 60%->2.0
+    weight = 1.3 + ((winRate - 52) * 0.1);
+  } else if (winRate >= 50) {
+    tier = 2;
+    // Neutral: 1.0 weight
+    weight = 1.0;
+  } else if (winRate >= 48) {
+    tier = 3;
+    // Weak: 0.3-0.5 weight
+    weight = 0.3 + ((winRate - 48) * 0.1);
+  } else {
+    tier = 4;
+    // Harmful: negative weight, scales with how bad it is
+    weight = -0.5 - ((48 - winRate) * 0.1);
+  }
+  
+  return { weight: Math.max(-1, Math.min(2, weight)), tier };
+}
 
 interface PatternDetection {
   name: PatternName;
@@ -343,9 +399,10 @@ interface PatternDetection {
   tier: number;
   weight: number;
   reason: string;
+  actualWinRate?: number;
 }
 
-// Analyze opportunity with pattern stats and tier-based weighting
+// Analyze opportunity with DYNAMIC pattern weights based on actual historical win rates
 function analyzeOpportunity(
   indicators: TechnicalIndicators,
   patterns: string[],
@@ -357,174 +414,219 @@ function analyzeOpportunity(
   const sellPatterns: PatternDetection[] = [];
   const matchedPatternStats: any[] = [];
   
-  // Filter pattern stats for this symbol (or use general if not found)
-  const symbolStats = patternStats.filter(p => p.symbol === symbol || p.symbol === null);
+  // Filter pattern stats for this symbol (prioritize symbol-specific, then fall back to null/EUR/USD)
+  const symbolStats = patternStats.filter(p => p.symbol === symbol);
+  const fallbackStats = patternStats.filter(p => p.symbol === null || p.symbol === 'EUR/USD');
   
-  // Detect patterns and classify by tier
+  // Helper to get win rate for a pattern (prefer 24h timeframe as most reliable)
+  const getPatternWinRate = (patternName: string, signalType: 'BUY' | 'SELL'): { winRate: number | null; stat: any | null } => {
+    let stat = symbolStats.find(p => p.pattern_name === patternName && p.signal_type === signalType);
+    if (!stat) {
+      stat = fallbackStats.find(p => p.pattern_name === patternName && p.signal_type === signalType);
+    }
+    if (stat) {
+      // Use 24h win rate as primary, fall back to others
+      const winRate = stat.win_rate_24h || stat.win_rate_12h || stat.win_rate_48h || stat.win_rate_4h;
+      return { winRate, stat };
+    }
+    return { winRate: null, stat: null };
+  };
   
-  // RSI - Tier 1
+  // Detect patterns using DYNAMIC weights from database
+  
+  // RSI Oversold
   if (indicators.rsi < 30) {
+    const { winRate, stat } = getPatternWinRate('rsi_oversold', 'BUY');
+    const { weight, tier } = getDynamicPatternWeight('rsi_oversold', winRate);
     buyPatterns.push({ 
       name: 'rsi_oversold', 
       type: 'BUY', 
-      tier: 1, 
-      weight: PATTERN_WEIGHTS.rsi_oversold.weight,
-      reason: 'RSI oversold (<30) - Tier 1 signal'
+      tier, 
+      weight,
+      reason: `RSI oversold (<30) - Tier ${tier} (${winRate?.toFixed(1) || 'N/A'}% win rate)`,
+      actualWinRate: winRate || undefined
     });
-    const stat = symbolStats.find(p => p.pattern_name === 'rsi_oversold');
     if (stat) matchedPatternStats.push(stat);
   } else if (indicators.rsi < 40) {
     buyPatterns.push({ 
       name: 'rsi_oversold', 
       type: 'BUY', 
-      tier: 2, 
-      weight: 0.5,
-      reason: 'RSI approaching oversold (30-40)'
+      tier: 3, 
+      weight: 0.3,
+      reason: 'RSI approaching oversold (30-40) - weak signal'
     });
   }
   
+  // RSI Overbought
   if (indicators.rsi > 70) {
+    const { winRate, stat } = getPatternWinRate('rsi_overbought', 'SELL');
+    const { weight, tier } = getDynamicPatternWeight('rsi_overbought', winRate);
     sellPatterns.push({ 
       name: 'rsi_overbought', 
       type: 'SELL', 
-      tier: 1, 
-      weight: PATTERN_WEIGHTS.rsi_overbought.weight,
-      reason: 'RSI overbought (>70) - Tier 1 signal'
+      tier, 
+      weight,
+      reason: `RSI overbought (>70) - Tier ${tier} (${winRate?.toFixed(1) || 'N/A'}% win rate)`,
+      actualWinRate: winRate || undefined
     });
-    const stat = symbolStats.find(p => p.pattern_name === 'rsi_overbought');
     if (stat) matchedPatternStats.push(stat);
   } else if (indicators.rsi > 60) {
     sellPatterns.push({ 
       name: 'rsi_overbought', 
       type: 'SELL', 
-      tier: 2, 
-      weight: 0.5,
-      reason: 'RSI approaching overbought (60-70)'
+      tier: 3, 
+      weight: 0.3,
+      reason: 'RSI approaching overbought (60-70) - weak signal'
     });
   }
   
-  // Bollinger Bands - Tier 1
+  // Bollinger Band Lower Touch
   if (currentPrice < indicators.bollingerBands.lower) {
+    const { winRate, stat } = getPatternWinRate('bb_lower_touch', 'BUY');
+    const { weight, tier } = getDynamicPatternWeight('bb_lower_touch', winRate);
     buyPatterns.push({ 
       name: 'bb_lower_touch', 
       type: 'BUY', 
-      tier: 1, 
-      weight: PATTERN_WEIGHTS.bb_lower_touch.weight,
-      reason: 'Price below lower Bollinger Band - Tier 1 signal'
+      tier, 
+      weight,
+      reason: `Price below lower BB - Tier ${tier} (${winRate?.toFixed(1) || 'N/A'}% win rate)`,
+      actualWinRate: winRate || undefined
     });
-    const stat = symbolStats.find(p => p.pattern_name === 'bb_lower_touch');
     if (stat) matchedPatternStats.push(stat);
   }
   
+  // Bollinger Band Upper Touch
   if (currentPrice > indicators.bollingerBands.upper) {
+    const { winRate, stat } = getPatternWinRate('bb_upper_touch', 'SELL');
+    const { weight, tier } = getDynamicPatternWeight('bb_upper_touch', winRate);
     sellPatterns.push({ 
       name: 'bb_upper_touch', 
       type: 'SELL', 
-      tier: 1, 
-      weight: PATTERN_WEIGHTS.bb_upper_touch.weight,
-      reason: 'Price above upper Bollinger Band - Tier 1 signal'
+      tier, 
+      weight,
+      reason: `Price above upper BB - Tier ${tier} (${winRate?.toFixed(1) || 'N/A'}% win rate)`,
+      actualWinRate: winRate || undefined
     });
-    const stat = symbolStats.find(p => p.pattern_name === 'bb_upper_touch');
     if (stat) matchedPatternStats.push(stat);
   }
   
-  // Stochastic - Tier 2
+  // Stochastic Oversold
   if (indicators.stochastic.k < 20 && indicators.stochastic.d < 20) {
+    const { winRate, stat } = getPatternWinRate('stochastic_oversold', 'BUY');
+    const { weight, tier } = getDynamicPatternWeight('stochastic_oversold', winRate);
     buyPatterns.push({ 
       name: 'stochastic_oversold', 
       type: 'BUY', 
-      tier: 2, 
-      weight: PATTERN_WEIGHTS.stochastic_oversold.weight,
-      reason: 'Stochastic deeply oversold (<20)'
+      tier, 
+      weight,
+      reason: `Stochastic deeply oversold (<20) - Tier ${tier}`,
+      actualWinRate: winRate || undefined
     });
+    if (stat) matchedPatternStats.push(stat);
   }
   
+  // Stochastic Overbought
   if (indicators.stochastic.k > 80 && indicators.stochastic.d > 80) {
+    const { winRate, stat } = getPatternWinRate('stochastic_overbought', 'SELL');
+    const { weight, tier } = getDynamicPatternWeight('stochastic_overbought', winRate);
     sellPatterns.push({ 
       name: 'stochastic_overbought', 
       type: 'SELL', 
-      tier: 2, 
-      weight: PATTERN_WEIGHTS.stochastic_overbought.weight,
-      reason: 'Stochastic deeply overbought (>80)'
+      tier, 
+      weight,
+      reason: `Stochastic deeply overbought (>80) - Tier ${tier}`,
+      actualWinRate: winRate || undefined
     });
+    if (stat) matchedPatternStats.push(stat);
   }
   
-  // MACD - Tier 3 (weak signals, low weight)
+  // MACD Bullish Cross
   if (indicators.macd.histogram > 0 && indicators.macd.value > indicators.macd.signal) {
+    const { winRate, stat } = getPatternWinRate('macd_bullish_cross', 'BUY');
+    const { weight, tier } = getDynamicPatternWeight('macd_bullish_cross', winRate);
     buyPatterns.push({ 
       name: 'macd_bullish_cross', 
       type: 'BUY', 
-      tier: 3, 
-      weight: PATTERN_WEIGHTS.macd_bullish_cross.weight,
-      reason: 'MACD bullish crossover - Tier 3 (weak)'
+      tier, 
+      weight,
+      reason: `MACD bullish cross - Tier ${tier} (${winRate?.toFixed(1) || 'N/A'}% win rate)`,
+      actualWinRate: winRate || undefined
     });
-    const stat = symbolStats.find(p => p.pattern_name === 'macd_bullish_cross');
     if (stat) matchedPatternStats.push(stat);
   }
   
+  // MACD Bearish Cross
   if (indicators.macd.histogram < 0 && indicators.macd.value < indicators.macd.signal) {
+    const { winRate, stat } = getPatternWinRate('macd_bearish_cross', 'SELL');
+    const { weight, tier } = getDynamicPatternWeight('macd_bearish_cross', winRate);
     sellPatterns.push({ 
       name: 'macd_bearish_cross', 
       type: 'SELL', 
-      tier: 3, 
-      weight: PATTERN_WEIGHTS.macd_bearish_cross.weight,
-      reason: 'MACD bearish crossover - Tier 3 (weak)'
+      tier, 
+      weight,
+      reason: `MACD bearish cross - Tier ${tier} (${winRate?.toFixed(1) || 'N/A'}% win rate)`,
+      actualWinRate: winRate || undefined
     });
-    const stat = symbolStats.find(p => p.pattern_name === 'macd_bearish_cross');
     if (stat) matchedPatternStats.push(stat);
   }
   
-  // EMA alignment - Tier 4 (actively harmful based on historical data)
+  // EMA alignment (Golden/Death Cross)
   const priceAboveEma21 = currentPrice > indicators.ema21;
   const priceAboveEma50 = currentPrice > indicators.ema50;
   const ema21AboveEma50 = indicators.ema21 > indicators.ema50;
   
   if (priceAboveEma21 && priceAboveEma50 && ema21AboveEma50) {
-    // This is golden cross - historically harmful, penalize
+    const { winRate, stat } = getPatternWinRate('golden_cross', 'BUY');
+    const { weight, tier } = getDynamicPatternWeight('golden_cross', winRate);
     buyPatterns.push({ 
       name: 'golden_cross', 
       type: 'BUY', 
-      tier: 4, 
-      weight: PATTERN_WEIGHTS.golden_cross.weight,
-      reason: 'Golden Cross alignment - Tier 4 (historically <46% win rate)'
+      tier, 
+      weight,
+      reason: `Golden Cross alignment - Tier ${tier} (${winRate?.toFixed(1) || 'N/A'}% win rate)`,
+      actualWinRate: winRate || undefined
     });
-    const stat = symbolStats.find(p => p.pattern_name === 'golden_cross');
     if (stat) matchedPatternStats.push(stat);
   } else if (!priceAboveEma21 && !priceAboveEma50 && !ema21AboveEma50) {
-    // Death cross - historically harmful, penalize
+    const { winRate, stat } = getPatternWinRate('death_cross', 'SELL');
+    const { weight, tier } = getDynamicPatternWeight('death_cross', winRate);
     sellPatterns.push({ 
       name: 'death_cross', 
       type: 'SELL', 
-      tier: 4, 
-      weight: PATTERN_WEIGHTS.death_cross.weight,
-      reason: 'Death Cross alignment - Tier 4 (historically <46% win rate)'
+      tier, 
+      weight,
+      reason: `Death Cross alignment - Tier ${tier} (${winRate?.toFixed(1) || 'N/A'}% win rate)`,
+      actualWinRate: winRate || undefined
     });
-    const stat = symbolStats.find(p => p.pattern_name === 'death_cross');
     if (stat) matchedPatternStats.push(stat);
   }
   
-  // Candlestick patterns - Tier 3
+  // Candlestick patterns
   patterns.forEach(p => {
     if (p.includes('Bullish') && p.includes('Engulfing')) {
+      const { winRate, stat } = getPatternWinRate('bullish_engulfing', 'BUY');
+      const { weight, tier } = getDynamicPatternWeight('bullish_engulfing', winRate);
       buyPatterns.push({ 
         name: 'bullish_engulfing', 
         type: 'BUY', 
-        tier: 3, 
-        weight: PATTERN_WEIGHTS.bullish_engulfing.weight,
-        reason: 'Bullish Engulfing - Tier 3 (48% win rate)'
+        tier, 
+        weight,
+        reason: `Bullish Engulfing - Tier ${tier} (${winRate?.toFixed(1) || 'N/A'}% win rate)`,
+        actualWinRate: winRate || undefined
       });
-      const stat = symbolStats.find(s => s.pattern_name === 'bullish_engulfing');
       if (stat && !matchedPatternStats.includes(stat)) matchedPatternStats.push(stat);
     }
     if (p.includes('Bearish') && p.includes('Engulfing')) {
+      const { winRate, stat } = getPatternWinRate('bearish_engulfing', 'SELL');
+      const { weight, tier } = getDynamicPatternWeight('bearish_engulfing', winRate);
       sellPatterns.push({ 
         name: 'bearish_engulfing', 
         type: 'SELL', 
-        tier: 3, 
-        weight: PATTERN_WEIGHTS.bearish_engulfing.weight,
-        reason: 'Bearish Engulfing - Tier 3 (48% win rate)'
+        tier, 
+        weight,
+        reason: `Bearish Engulfing - Tier ${tier} (${winRate?.toFixed(1) || 'N/A'}% win rate)`,
+        actualWinRate: winRate || undefined
       });
-      const stat = symbolStats.find(s => s.pattern_name === 'bearish_engulfing');
       if (stat && !matchedPatternStats.includes(stat)) matchedPatternStats.push(stat);
     }
   });
@@ -890,9 +992,33 @@ serve(async (req) => {
   try {
     console.log("Starting multi-currency opportunity scan...");
     
+    // Initialize Supabase first (needed for fetching active pairs)
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    
     // Parse request body for optional symbol filter
     const body = await req.json().catch(() => ({}));
-    const requestedSymbols: string[] = body?.symbols || body?.symbol ? [body.symbol] : SUPPORTED_PAIRS;
+    
+    // Get active pairs from database or use provided symbols
+    let requestedSymbols: string[];
+    if (body?.symbols) {
+      requestedSymbols = body.symbols;
+    } else if (body?.symbol) {
+      requestedSymbols = [body.symbol];
+    } else {
+      // Fetch from database
+      const activePairs = await getActiveCurrencyPairs(supabase);
+      requestedSymbols = activePairs.map(p => p.symbol);
+      
+      if (requestedSymbols.length === 0) {
+        console.log("No active currency pairs found in database");
+        return new Response(
+          JSON.stringify({ success: true, message: "No active currency pairs configured", scanned: false }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
     
     // Check market status
     const marketStatus = isForexMarketOpen();
@@ -903,11 +1029,6 @@ serve(async (req) => {
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    // Initialize Supabase
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Expire old opportunities (all symbols)
     await supabase
