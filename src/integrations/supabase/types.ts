@@ -301,6 +301,39 @@ export type Database = {
           },
         ]
       }
+      supported_currency_pairs: {
+        Row: {
+          created_at: string | null
+          display_name: string
+          has_pattern_stats: boolean | null
+          id: string
+          is_active: boolean | null
+          pip_value: number
+          symbol: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          display_name: string
+          has_pattern_stats?: boolean | null
+          id?: string
+          is_active?: boolean | null
+          pip_value?: number
+          symbol: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          display_name?: string
+          has_pattern_stats?: boolean | null
+          id?: string
+          is_active?: boolean | null
+          pip_value?: number
+          symbol?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       trading_opportunities: {
         Row: {
           ai_learning_id: string | null

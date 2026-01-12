@@ -86,14 +86,27 @@ const TradingViewChart = memo(({
 
     seriesRef.current = candlestickSeries;
 
-    // Transform candles data
-    const chartData: CandlestickData<Time>[] = candles.map((candle) => ({
-      time: (new Date(candle.timestamp).getTime() / 1000) as Time,
-      open: candle.open,
-      high: candle.high,
-      low: candle.low,
-      close: candle.close,
-    }));
+    // Transform candles data - deduplicate by timestamp and sort ascending
+    const seenTimes = new Set<number>();
+    const chartData: CandlestickData<Time>[] = candles
+      .map((candle) => ({
+        time: Math.floor(new Date(candle.timestamp).getTime() / 1000) as Time,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+      }))
+      .filter((item) => {
+        const timeNum = item.time as number;
+        if (seenTimes.has(timeNum)) {
+          return false; // Skip duplicate
+        }
+        seenTimes.add(timeNum);
+        return true;
+      })
+      .sort((a, b) => (a.time as number) - (b.time as number));
+
+    if (chartData.length === 0) return;
 
     candlestickSeries.setData(chartData);
 

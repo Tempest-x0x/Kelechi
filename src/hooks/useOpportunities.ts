@@ -19,6 +19,7 @@ export interface TradingOpportunity {
   status: 'ACTIVE' | 'EXPIRED' | 'TRIGGERED';
   triggered_at: string | null;
   outcome: 'WIN' | 'LOSS' | 'PENDING' | 'EXPIRED' | null;
+  symbol: string | null;
 }
 
 interface ScanResult {
@@ -26,9 +27,11 @@ interface ScanResult {
   message: string;
   scanned: boolean;
   opportunity?: TradingOpportunity;
+  opportunities?: TradingOpportunity[];
+  opportunitiesFound?: number;
 }
 
-export function useOpportunities() {
+export function useOpportunities(symbolFilter?: string) {
   const [opportunities, setOpportunities] = useState<TradingOpportunity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,11 +40,18 @@ export function useOpportunities() {
 
   const fetchOpportunities = useCallback(async () => {
     try {
-      const { data, error: fetchError } = await supabase
+      let query = supabase
         .from('trading_opportunities')
         .select('*')
         .eq('status', 'ACTIVE')
         .order('created_at', { ascending: false });
+
+      // Optionally filter by symbol
+      if (symbolFilter) {
+        query = query.eq('symbol', symbolFilter);
+      }
+
+      const { data, error: fetchError } = await query;
 
       if (fetchError) throw fetchError;
 
@@ -54,12 +64,14 @@ export function useOpportunities() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [symbolFilter]);
 
-  const triggerScan = useCallback(async (): Promise<ScanResult> => {
+  const triggerScan = useCallback(async (symbols?: string[]): Promise<ScanResult> => {
     setIsScanning(true);
     try {
-      const { data, error: scanError } = await supabase.functions.invoke('scan-opportunities');
+      const { data, error: scanError } = await supabase.functions.invoke('scan-opportunities', {
+        body: symbols ? { symbols } : undefined
+      });
 
       if (scanError) throw scanError;
 

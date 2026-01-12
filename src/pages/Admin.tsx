@@ -6,6 +6,7 @@ import { ArrowLeft, Moon, Sun } from "lucide-react";
 import WeeklyPostMortem from "@/components/admin/WeeklyPostMortem";
 import DailyBiasPanel from "@/components/admin/DailyBiasPanel";
 import WhitelistPanel from "@/components/admin/WhitelistPanel";
+import CurrencyPairsPanel from "@/components/admin/CurrencyPairsPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const Admin = () => {
@@ -76,12 +77,17 @@ const Admin = () => {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
-        <Tabs defaultValue="weekly" className="w-full">
-          <TabsList className="grid w-full max-w-lg grid-cols-3 mb-6">
+        <Tabs defaultValue="pairs" className="w-full">
+          <TabsList className="grid w-full max-w-2xl grid-cols-4 mb-6">
+            <TabsTrigger value="pairs">Currency Pairs</TabsTrigger>
             <TabsTrigger value="weekly">Weekly Post-Mortem</TabsTrigger>
             <TabsTrigger value="daily">Daily Bias</TabsTrigger>
             <TabsTrigger value="whitelist">Whitelist</TabsTrigger>
           </TabsList>
+          
+          <TabsContent value="pairs">
+            <CurrencyPairsPanel />
+          </TabsContent>
           
           <TabsContent value="weekly">
             <WeeklyPostMortem />

@@ -6,6 +6,8 @@ import { DashboardHeader } from '@/components/dashboard/DashboardHeader';
 import { PriceDisplay } from '@/components/trading/PriceDisplay';
 import { TradingViewChart } from '@/components/trading/TradingViewChart';
 import { TimeframeSelector } from '@/components/trading/TimeframeSelector';
+import { CurrencyPairSelector } from '@/components/trading/CurrencyPairSelector';
+import { MultiPriceDisplay } from '@/components/trading/MultiPriceDisplay';
 import { SignalCard } from '@/components/trading/SignalCard';
 import TechnicalIndicators from '@/components/trading/TechnicalIndicators';
 import { SentimentPanel } from '@/components/trading/SentimentPanel';
@@ -22,6 +24,7 @@ import { useOpportunities } from '@/hooks/useOpportunities';
 import { useSubscription } from '@/hooks/useSubscription';
 import { useAdmin } from '@/hooks/useAdmin';
 import { useWhitelist } from '@/hooks/useWhitelist';
+import { useCurrencyPairs } from '@/hooks/useCurrencyPairs';
 import { Timeframe } from '@/types/trading';
 import { Loader2, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -31,13 +34,20 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [timeframe, setTimeframe] = useState<Timeframe>('1h');
+  const [selectedSymbol, setSelectedSymbol] = useState<string>('EUR/USD');
   const [user, setUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
   
-  const { data: forexData, isLoading: forexLoading, error: forexError } = useForexData(timeframe);
+  // Currency pairs
+  const { activePairs, isLoading: pairsLoading } = useCurrencyPairs();
+  
+  // Forex data for selected symbol
+  const { data: forexData, isLoading: forexLoading, error: forexError } = useForexData(timeframe, selectedSymbol);
   const { prediction, isLoading: predictionLoading, generatePrediction } = usePrediction();
   const { predictions, isLoading: historyLoading } = usePredictionHistory();
+  
+  // Get all active opportunities (not filtered by symbol)
   const { opportunities, isLoading: opportunitiesLoading, isScanning, lastScanned, triggerScan } = useOpportunities();
   const { subscription, isLoading: subscriptionLoading, hasActiveSubscription, waitForSubscription } = useSubscription();
   const { isAdmin, isLoading: adminLoading } = useAdmin();
@@ -112,9 +122,11 @@ const Dashboard = () => {
 
   const handleScan = async () => {
     try {
-      const result = await triggerScan();
-      if (result.opportunity) {
-        toast.success(`New ${result.opportunity.signal_type} opportunity detected!`);
+      // Scan all active pairs
+      const symbols = activePairs.map(p => p.symbol);
+      const result = await triggerScan(symbols);
+      if (result.opportunitiesFound && result.opportunitiesFound > 0) {
+        toast.success(`Found ${result.opportunitiesFound} new opportunity(ies)!`);
       } else if (result.scanned) {
         toast.info(result.message || 'No opportunities found');
       } else {
@@ -153,11 +165,23 @@ const Dashboard = () => {
         />
         
         <main className="container mx-auto px-4 py-6">
-          {/* Price Header */}
+          {/* Multi-Price Display Grid */}
+          {!pairsLoading && activePairs.length > 0 && (
+            <div className="mb-6">
+              <MultiPriceDisplay
+                pairs={activePairs}
+                selectedSymbol={selectedSymbol}
+                onSelectSymbol={setSelectedSymbol}
+              />
+            </div>
+          )}
+
+          {/* Price Header for Selected Pair */}
           <div className="mb-6">
             <PriceDisplay 
+              symbol={selectedSymbol}
               price={forexData?.currentPrice ?? null}
-              previousPrice={forexData?.candles?.[1]?.close ?? null}
+              previousPrice={forexData?.candles?.[forexData.candles.length - 2]?.close ?? null}
               isLoading={forexLoading}
             />
           </div>
@@ -166,11 +190,19 @@ const Dashboard = () => {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Left Column - Chart & Controls */}
             <div className="lg:col-span-8 space-y-4">
-              <div className="flex items-center justify-between">
-                <TimeframeSelector 
-                  value={timeframe} 
-                  onChange={setTimeframe} 
-                />
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <CurrencyPairSelector
+                    pairs={activePairs}
+                    selectedSymbol={selectedSymbol}
+                    onSelect={setSelectedSymbol}
+                    isLoading={pairsLoading}
+                  />
+                  <TimeframeSelector 
+                    value={timeframe} 
+                    onChange={setTimeframe} 
+                  />
+                </div>
               </div>
               
               <div className="bg-card rounded-xl border border-border p-4 min-h-[400px]">
