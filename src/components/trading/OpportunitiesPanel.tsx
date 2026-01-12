@@ -116,10 +116,6 @@ export function OpportunitiesPanel({
               {/* Header */}
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  {/* Symbol Badge */}
-                  <Badge variant="outline" className="font-mono text-xs">
-                    {opp.symbol || 'EUR/USD'}
-                  </Badge>
                   {opp.signal_type === 'BUY' ? (
                     <TrendingUp className="h-5 w-5 text-emerald-500" />
                   ) : (
@@ -134,7 +130,7 @@ export function OpportunitiesPanel({
                     variant={opp.confidence >= 75 ? 'default' : 'secondary'}
                     className={opp.confidence >= 75 ? 'bg-primary' : ''}
                   >
-                    {opp.confidence.toFixed(0)}%
+                    {opp.confidence.toFixed(0)}% confidence
                   </Badge>
                 </div>
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { ForexData, Timeframe } from '@/types/trading';
 
-export function useForexData(timeframe: Timeframe = '1h', symbol: string = 'EUR/USD') {
+export function useForexData(timeframe: Timeframe = '1h') {
   const [data, setData] = useState<ForexData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +23,7 @@ export function useForexData(timeframe: Timeframe = '1h', symbol: string = 'EUR/
       };
 
       const { data: result, error: fnError } = await supabase.functions.invoke('fetch-forex-data', {
-        body: { timeframe, outputsize: outputsizeByTimeframe[timeframe] ?? 200, symbol },
+        body: { timeframe, outputsize: outputsizeByTimeframe[timeframe] ?? 200 },
       });
 
       if (fnError) throw fnError;
@@ -47,7 +47,7 @@ export function useForexData(timeframe: Timeframe = '1h', symbol: string = 'EUR/
       const { data: cachedRows, error: cacheError } = await supabase
         .from('price_history')
         .select('timestamp, open, high, low, close, volume')
-        .eq('symbol', symbol)
+        .eq('symbol', 'EUR/USD')
         .eq('timeframe', timeframe)
         .order('timestamp', { ascending: true })
         .limit(300);
@@ -63,7 +63,7 @@ export function useForexData(timeframe: Timeframe = '1h', symbol: string = 'EUR/
         }));
 
         setData({
-          symbol,
+          symbol: 'EUR/USD',
           currentPrice: candles[candles.length - 1]?.close ?? 0,
           candles,
           meta: { source: 'cache_fallback', warning: message },
@@ -76,7 +76,7 @@ export function useForexData(timeframe: Timeframe = '1h', symbol: string = 'EUR/
     } finally {
       setIsLoading(false);
     }
-  }, [timeframe, symbol]);
+  }, [timeframe]);
 
   useEffect(() => {
     fetchData();
