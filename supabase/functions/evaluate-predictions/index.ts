@@ -267,6 +267,46 @@ serve(async (req) => {
             lesson: lessonExtracted
           });
         }
+
+        // Send Telegram notification for prediction outcome
+        try {
+          const telegramPayload = {
+            type: 'outcome',
+            signal_type: prediction.signal_type,
+            outcome: outcome,
+            confidence: prediction.confidence,
+            entry_price: prediction.entry_price,
+            outcome_price: priceHistory.current,
+            stop_loss: prediction.stop_loss,
+            take_profit_1: prediction.take_profit_1,
+            created_at: prediction.created_at,
+            symbol: 'EUR/USD', // Predictions table is EUR/USD only
+            reasoning: prediction.reasoning,
+            learning_summary: lessonExtracted,
+            patterns_detected: prediction.patterns_detected
+          };
+
+          const telegramResponse = await fetch(
+            `${supabaseUrl}/functions/v1/send-telegram-notification`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${supabaseServiceKey}`
+              },
+              body: JSON.stringify(telegramPayload)
+            }
+          );
+
+          if (telegramResponse.ok) {
+            console.log(`Telegram notification sent for prediction ${prediction.id} (${outcome})`);
+          } else {
+            const errText = await telegramResponse.text();
+            console.error(`Failed to send Telegram notification: ${errText}`);
+          }
+        } catch (telegramError) {
+          console.error(`Telegram notification error for prediction ${prediction.id}:`, telegramError);
+        }
       }
     }
 
