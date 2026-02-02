@@ -515,21 +515,22 @@ function getSignalConfirmation(indicators: TechnicalIndicators, patterns: string
   return { canBuy, canSell, buyReasons, sellReasons, conflicts };
 }
 
-// Calculate ATR-based stop loss and take profit with ENFORCED 1:3 R:R
+// Calculate ATR-based stop loss and take profit with 1:2.2 R:R
+// Aligned with pattern statistics methodology for more achievable targets
 function calculateATRBasedLevels(
   currentPrice: number, 
   atr: number, 
   signalType: 'BUY' | 'SELL',
   timeframe: string
 ): { stopLoss: number; takeProfit1: number; takeProfit2: number } {
-  // ENFORCED 1:3 MINIMUM R:R across all timeframes
-  // TP1 is always 3x the SL distance for 1:3 R:R
-  // TP2 is extended target for runners
+  // 1:2.2 R:R across all timeframes (aligned with pattern statistics methodology)
+  // TP1 is 2.2x the SL distance for 1:2.2 R:R
+  // TP2 is extended target for runners at 3.0x
   const multipliers: Record<string, { sl: number; tp1: number; tp2: number }> = {
-    '15m': { sl: 1.0, tp1: 3.0, tp2: 4.5 },   // 1:3 R:R
-    '1h':  { sl: 1.0, tp1: 3.0, tp2: 4.5 },   // 1:3 R:R
-    '4h':  { sl: 1.2, tp1: 3.6, tp2: 5.4 },   // 1:3 R:R
-    '1d':  { sl: 1.5, tp1: 4.5, tp2: 6.0 }    // 1:3 R:R
+    '15m': { sl: 1.0, tp1: 2.2, tp2: 3.0 },   // 1:2.2 R:R
+    '1h':  { sl: 1.0, tp1: 2.2, tp2: 3.0 },   // 1:2.2 R:R
+    '4h':  { sl: 1.2, tp1: 2.64, tp2: 3.6 },  // 1:2.2 R:R
+    '1d':  { sl: 1.5, tp1: 3.3, tp2: 4.5 }    // 1:2.2 R:R
   };
   
   const mult = multipliers[timeframe] || multipliers['1h'];
