@@ -660,49 +660,43 @@ function analyzeOpportunity(
     signal = 'BUY';
     reasons = buyPatterns.map(p => p.reason);
     
-    // Confidence calculation based on tiers
-    confidence = 50 
-      + (buyTier1Count * 12)  // +12 per Tier 1 pattern
-      + (buyPatterns.filter(p => p.tier === 2).length * 5)   // +5 per Tier 2
-      + (buyPatterns.filter(p => p.tier === 3).length * 2)   // +2 per Tier 3
-      - (buyTier4Count * 10); // -10 per Tier 4 (penalty)
-    
-    // Combination bonuses
-    const hasRsiOversold = buyPatterns.some(p => p.name === 'rsi_oversold' && p.tier === 1);
-    const hasBbLower = buyPatterns.some(p => p.name === 'bb_lower_touch');
-    const hasStochOversold = buyPatterns.some(p => p.name === 'stochastic_oversold');
-    
-    if (hasRsiOversold && hasBbLower) {
-      confidence += 15;
-      reasons.push('✨ RSI + BB combo bonus (+15%)');
-    }
-    if (hasRsiOversold && hasStochOversold) {
-      confidence += 10;
-      reasons.push('✨ RSI + Stochastic combo bonus (+10%)');
+    // DATA-DRIVEN CONFIDENCE: Use actual win rates from pattern statistics
+    // Instead of arbitrary bonuses, calculate average win rate of detected patterns
+    const patternsWithWinRates = buyPatterns.filter(p => p.actualWinRate !== undefined);
+    if (patternsWithWinRates.length > 0) {
+      // Weight by tier: Tier 1 patterns count more in average
+      let weightedSum = 0;
+      let totalWeight = 0;
+      for (const p of patternsWithWinRates) {
+        const weight = p.tier === 1 ? 2.0 : p.tier === 2 ? 1.0 : 0.5;
+        weightedSum += (p.actualWinRate || 50) * weight;
+        totalWeight += weight;
+      }
+      confidence = totalWeight > 0 ? weightedSum / totalWeight : 50;
+      reasons.push(`📊 Data-driven confidence from ${patternsWithWinRates.length} patterns`);
+    } else {
+      // Fallback: use base expected win rates if no DB stats
+      confidence = 52; // Conservative estimate based on Tier 1 patterns
     }
     
   } else if (sellTier1Count >= 1 && sellScore >= SCORE_THRESHOLD && netSellAdvantage >= 0.5) {
     signal = 'SELL';
     reasons = sellPatterns.map(p => p.reason);
     
-    confidence = 50 
-      + (sellTier1Count * 12)
-      + (sellPatterns.filter(p => p.tier === 2).length * 5)
-      + (sellPatterns.filter(p => p.tier === 3).length * 2)
-      - (sellTier4Count * 10);
-    
-    // Combination bonuses
-    const hasRsiOverbought = sellPatterns.some(p => p.name === 'rsi_overbought' && p.tier === 1);
-    const hasBbUpper = sellPatterns.some(p => p.name === 'bb_upper_touch');
-    const hasStochOverbought = sellPatterns.some(p => p.name === 'stochastic_overbought');
-    
-    if (hasRsiOverbought && hasBbUpper) {
-      confidence += 15;
-      reasons.push('✨ RSI + BB combo bonus (+15%)');
-    }
-    if (hasRsiOverbought && hasStochOverbought) {
-      confidence += 10;
-      reasons.push('✨ RSI + Stochastic combo bonus (+10%)');
+    // DATA-DRIVEN CONFIDENCE: Use actual win rates from pattern statistics
+    const patternsWithWinRates = sellPatterns.filter(p => p.actualWinRate !== undefined);
+    if (patternsWithWinRates.length > 0) {
+      let weightedSum = 0;
+      let totalWeight = 0;
+      for (const p of patternsWithWinRates) {
+        const weight = p.tier === 1 ? 2.0 : p.tier === 2 ? 1.0 : 0.5;
+        weightedSum += (p.actualWinRate || 50) * weight;
+        totalWeight += weight;
+      }
+      confidence = totalWeight > 0 ? weightedSum / totalWeight : 50;
+      reasons.push(`📊 Data-driven confidence from ${patternsWithWinRates.length} patterns`);
+    } else {
+      confidence = 52; // Conservative estimate
     }
   }
   
@@ -711,43 +705,44 @@ function analyzeOpportunity(
     console.log(`[${symbol}] No signal: BUY T1=${buyTier1Count}, SELL T1=${sellTier1Count}, threshold=${SCORE_THRESHOLD}`);
   }
   
-  // Clamp confidence
-  confidence = Math.min(95, Math.max(0, confidence));
+  // Clamp confidence to realistic range (45-58% based on historical data)
+  confidence = Math.min(58, Math.max(45, confidence));
   
   return { signal, confidence, reasons, patternData: matchedPatternStats };
 }
 
-// Calculate ATR-based levels with ENFORCED 1:3 R:R
-// 1:3 R:R ensures profitability at just 25% win rate - prop firm compatible
+// Calculate ATR-based levels with 1:2.2 R:R (aligned with pattern statistics methodology)
+// 1:2.2 R:R aligns with how the original pattern statistics measured success
+// More achievable targets that can realistically be hit within the evaluation window
 function calculateLevels(
   currentPrice: number, 
   atr: number, 
   signalType: 'BUY' | 'SELL',
   confidence: number
 ): { stopLoss: number; takeProfit1: number; takeProfit2: number; riskRewardRatio: string } {
-  // ENFORCED 1:3 MINIMUM R:R - Suitable for prop firm challenges
-  // SL = 1.0x ATR, TP1 = 3.0x ATR (1:3 R:R)
-  // TP2 = 4.5x ATR (1:4.5 R:R for runners)
+  // 1:2.2 R:R - Aligned with pattern statistics methodology
+  // SL = 1.0x ATR, TP1 = 2.2x ATR (1:2.2 R:R)
+  // TP2 = 3.0x ATR (extended target for runners)
   
-  // Base multipliers for 1:3 R:R
+  // Base multipliers for 1:2.2 R:R
   let slMult = 1.0;
-  let tp1Mult = 3.0;
-  let tp2Mult = 4.5;
+  let tp1Mult = 2.2;
+  let tp2Mult = 3.0;
   
-  // Higher confidence = slightly tighter stop for even better R:R
-  if (confidence >= 80) {
-    slMult = 0.8;  // Tighter stop = 1:3.75 R:R
-    tp1Mult = 3.0;
-    tp2Mult = 4.5;
-  } else if (confidence >= 70) {
-    slMult = 1.0;  // Standard 1:3 R:R
-    tp1Mult = 3.0;
-    tp2Mult = 4.5;
+  // Confidence adjustments (now realistic 45-58% range)
+  if (confidence >= 55) {
+    slMult = 0.9;   // Slightly tighter stop for high-confidence signals
+    tp1Mult = 2.2;
+    tp2Mult = 3.0;
+  } else if (confidence >= 50) {
+    slMult = 1.0;   // Standard 1:2.2 R:R
+    tp1Mult = 2.2;
+    tp2Mult = 3.0;
   } else {
-    // Lower confidence: slightly wider stop but maintain 1:3 minimum
-    slMult = 1.2;
-    tp1Mult = 3.6;  // 1:3 R:R maintained
-    tp2Mult = 5.0;
+    // Lower confidence: slightly wider stop but maintain ratio
+    slMult = 1.1;
+    tp1Mult = 2.42;  // 1:2.2 R:R maintained
+    tp2Mult = 3.3;
   }
   
   const riskRewardRatio = `1:${(tp1Mult / slMult).toFixed(1)}`;
