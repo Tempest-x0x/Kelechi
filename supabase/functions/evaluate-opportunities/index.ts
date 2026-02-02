@@ -291,11 +291,12 @@ serve(async (req) => {
     for (const opp of pendingOpps) {
       console.log(`Evaluating opportunity ${opp.id}...`);
 
-      // Fetch price history since the opportunity was created
+      // Fetch price history since the opportunity was created (use the opportunity's symbol)
+      const opportunitySymbol = opp.symbol || 'EUR/USD';
       const { data: priceHistory, error: priceError } = await supabase
         .from('price_history')
         .select('timestamp, high, low, close')
-        .eq('symbol', 'EUR/USD')
+        .eq('symbol', opportunitySymbol)
         .eq('timeframe', '1h')
         .gte('timestamp', opp.created_at)
         .order('timestamp', { ascending: true });
