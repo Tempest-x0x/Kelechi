@@ -352,10 +352,34 @@ const BASE_PATTERN_WEIGHTS = {
 
 type PatternName = keyof typeof BASE_PATTERN_WEIGHTS;
 
+// NEW: Get pair-specific Tier 1 threshold based on historical performance
+// Strong pairs (best pattern >=52%): Keep strict 52% threshold
+// Weak pairs (best pattern 50.5%-52%): Use adaptive threshold to enable signals
+function getTier1Threshold(symbol: string, patternStats: any[]): number {
+  const symbolStats = patternStats.filter(p => p.symbol === symbol);
+  if (symbolStats.length === 0) return 52; // Default to strict threshold
+  
+  const bestWinRate = Math.max(...symbolStats.map(p => 
+    p.win_rate_24h || p.win_rate_12h || p.win_rate_48h || p.win_rate_4h || 50
+  ));
+  
+  // Adaptive threshold based on pair's best historical performance:
+  // - Strong pairs (>=52%): Keep strict 52% threshold
+  // - Moderate pairs (51-52%): Lower to 51%
+  // - Weak pairs (50.5-51%): Lower to 50.5%
+  // - Very weak pairs (<50.5%): Keep at 52% (effectively disable)
+  if (bestWinRate >= 52) return 52;
+  if (bestWinRate >= 51) return 51;
+  if (bestWinRate >= 50.5) return 50.5;
+  return 52; // Disable pairs below 50.5%
+}
+
 // Calculate dynamic weight and tier based on actual win rate from database
+// Now accepts pair-specific tier1Threshold for adaptive classification
 function getDynamicPatternWeight(
   patternName: PatternName, 
-  winRate: number | null
+  winRate: number | null,
+  tier1Threshold: number = 52  // NEW: pair-specific threshold
 ): { weight: number; tier: number } {
   const baseWeight = BASE_PATTERN_WEIGHTS[patternName];
   
@@ -364,18 +388,18 @@ function getDynamicPatternWeight(
     return { weight: baseWeight.weight, tier: baseWeight.tier };
   }
   
-  // Dynamic tier based on ACTUAL win rate:
-  // Tier 1: >52% win rate (statistically significant edge)
-  // Tier 2: 50-52% (neutral)
+  // Dynamic tier based on ACTUAL win rate with ADAPTIVE threshold:
+  // Tier 1: >tier1Threshold (pair-specific, 50.5-52%)
+  // Tier 2: 50-tier1Threshold (neutral)
   // Tier 3: 48-50% (weak)
   // Tier 4: <48% (harmful)
   let tier: number;
   let weight: number;
   
-  if (winRate > 52) {
+  if (winRate > tier1Threshold) {
     tier = 1;
-    // Scale weight: 52%->1.3, 55%->1.6, 60%->2.0
-    weight = 1.3 + ((winRate - 52) * 0.1);
+    // Scale weight based on how much above threshold
+    weight = 1.3 + ((winRate - tier1Threshold) * 0.1);
   } else if (winRate >= 50) {
     tier = 2;
     // Neutral: 1.0 weight
@@ -418,6 +442,11 @@ function analyzeOpportunity(
   const symbolStats = patternStats.filter(p => p.symbol === symbol);
   const fallbackStats = patternStats.filter(p => p.symbol === null || p.symbol === 'EUR/USD');
   
+  // Calculate ADAPTIVE Tier 1 threshold for this specific pair
+  // Strong pairs use 52%, weaker pairs use 51% or 50.5% based on their best historical win rate
+  const tier1Threshold = getTier1Threshold(symbol, patternStats);
+  console.log(`[${symbol}] Using adaptive Tier 1 threshold: ${tier1Threshold}%`);
+  
   // Helper to get win rate for a pattern (prefer 24h timeframe as most reliable)
   const getPatternWinRate = (patternName: string, signalType: 'BUY' | 'SELL'): { winRate: number | null; stat: any | null } => {
     let stat = symbolStats.find(p => p.pattern_name === patternName && p.signal_type === signalType);
@@ -432,12 +461,12 @@ function analyzeOpportunity(
     return { winRate: null, stat: null };
   };
   
-  // Detect patterns using DYNAMIC weights from database
+  // Detect patterns using DYNAMIC weights from database with ADAPTIVE thresholds
   
   // RSI Oversold
   if (indicators.rsi < 30) {
     const { winRate, stat } = getPatternWinRate('rsi_oversold', 'BUY');
-    const { weight, tier } = getDynamicPatternWeight('rsi_oversold', winRate);
+    const { weight, tier } = getDynamicPatternWeight('rsi_oversold', winRate, tier1Threshold);
     buyPatterns.push({ 
       name: 'rsi_oversold', 
       type: 'BUY', 
@@ -460,7 +489,7 @@ function analyzeOpportunity(
   // RSI Overbought
   if (indicators.rsi > 70) {
     const { winRate, stat } = getPatternWinRate('rsi_overbought', 'SELL');
-    const { weight, tier } = getDynamicPatternWeight('rsi_overbought', winRate);
+    const { weight, tier } = getDynamicPatternWeight('rsi_overbought', winRate, tier1Threshold);
     sellPatterns.push({ 
       name: 'rsi_overbought', 
       type: 'SELL', 
@@ -483,7 +512,7 @@ function analyzeOpportunity(
   // Bollinger Band Lower Touch
   if (currentPrice < indicators.bollingerBands.lower) {
     const { winRate, stat } = getPatternWinRate('bb_lower_touch', 'BUY');
-    const { weight, tier } = getDynamicPatternWeight('bb_lower_touch', winRate);
+    const { weight, tier } = getDynamicPatternWeight('bb_lower_touch', winRate, tier1Threshold);
     buyPatterns.push({ 
       name: 'bb_lower_touch', 
       type: 'BUY', 
@@ -498,7 +527,7 @@ function analyzeOpportunity(
   // Bollinger Band Upper Touch
   if (currentPrice > indicators.bollingerBands.upper) {
     const { winRate, stat } = getPatternWinRate('bb_upper_touch', 'SELL');
-    const { weight, tier } = getDynamicPatternWeight('bb_upper_touch', winRate);
+    const { weight, tier } = getDynamicPatternWeight('bb_upper_touch', winRate, tier1Threshold);
     sellPatterns.push({ 
       name: 'bb_upper_touch', 
       type: 'SELL', 
@@ -513,7 +542,7 @@ function analyzeOpportunity(
   // Stochastic Oversold
   if (indicators.stochastic.k < 20 && indicators.stochastic.d < 20) {
     const { winRate, stat } = getPatternWinRate('stochastic_oversold', 'BUY');
-    const { weight, tier } = getDynamicPatternWeight('stochastic_oversold', winRate);
+    const { weight, tier } = getDynamicPatternWeight('stochastic_oversold', winRate, tier1Threshold);
     buyPatterns.push({ 
       name: 'stochastic_oversold', 
       type: 'BUY', 
@@ -528,7 +557,7 @@ function analyzeOpportunity(
   // Stochastic Overbought
   if (indicators.stochastic.k > 80 && indicators.stochastic.d > 80) {
     const { winRate, stat } = getPatternWinRate('stochastic_overbought', 'SELL');
-    const { weight, tier } = getDynamicPatternWeight('stochastic_overbought', winRate);
+    const { weight, tier } = getDynamicPatternWeight('stochastic_overbought', winRate, tier1Threshold);
     sellPatterns.push({ 
       name: 'stochastic_overbought', 
       type: 'SELL', 
@@ -543,7 +572,7 @@ function analyzeOpportunity(
   // MACD Bullish Cross
   if (indicators.macd.histogram > 0 && indicators.macd.value > indicators.macd.signal) {
     const { winRate, stat } = getPatternWinRate('macd_bullish_cross', 'BUY');
-    const { weight, tier } = getDynamicPatternWeight('macd_bullish_cross', winRate);
+    const { weight, tier } = getDynamicPatternWeight('macd_bullish_cross', winRate, tier1Threshold);
     buyPatterns.push({ 
       name: 'macd_bullish_cross', 
       type: 'BUY', 
@@ -558,7 +587,7 @@ function analyzeOpportunity(
   // MACD Bearish Cross
   if (indicators.macd.histogram < 0 && indicators.macd.value < indicators.macd.signal) {
     const { winRate, stat } = getPatternWinRate('macd_bearish_cross', 'SELL');
-    const { weight, tier } = getDynamicPatternWeight('macd_bearish_cross', winRate);
+    const { weight, tier } = getDynamicPatternWeight('macd_bearish_cross', winRate, tier1Threshold);
     sellPatterns.push({ 
       name: 'macd_bearish_cross', 
       type: 'SELL', 
@@ -577,7 +606,7 @@ function analyzeOpportunity(
   
   if (priceAboveEma21 && priceAboveEma50 && ema21AboveEma50) {
     const { winRate, stat } = getPatternWinRate('golden_cross', 'BUY');
-    const { weight, tier } = getDynamicPatternWeight('golden_cross', winRate);
+    const { weight, tier } = getDynamicPatternWeight('golden_cross', winRate, tier1Threshold);
     buyPatterns.push({ 
       name: 'golden_cross', 
       type: 'BUY', 
@@ -589,7 +618,7 @@ function analyzeOpportunity(
     if (stat) matchedPatternStats.push(stat);
   } else if (!priceAboveEma21 && !priceAboveEma50 && !ema21AboveEma50) {
     const { winRate, stat } = getPatternWinRate('death_cross', 'SELL');
-    const { weight, tier } = getDynamicPatternWeight('death_cross', winRate);
+    const { weight, tier } = getDynamicPatternWeight('death_cross', winRate, tier1Threshold);
     sellPatterns.push({ 
       name: 'death_cross', 
       type: 'SELL', 
@@ -605,7 +634,7 @@ function analyzeOpportunity(
   patterns.forEach(p => {
     if (p.includes('Bullish') && p.includes('Engulfing')) {
       const { winRate, stat } = getPatternWinRate('bullish_engulfing', 'BUY');
-      const { weight, tier } = getDynamicPatternWeight('bullish_engulfing', winRate);
+      const { weight, tier } = getDynamicPatternWeight('bullish_engulfing', winRate, tier1Threshold);
       buyPatterns.push({ 
         name: 'bullish_engulfing', 
         type: 'BUY', 
@@ -618,7 +647,7 @@ function analyzeOpportunity(
     }
     if (p.includes('Bearish') && p.includes('Engulfing')) {
       const { winRate, stat } = getPatternWinRate('bearish_engulfing', 'SELL');
-      const { weight, tier } = getDynamicPatternWeight('bearish_engulfing', winRate);
+      const { weight, tier } = getDynamicPatternWeight('bearish_engulfing', winRate, tier1Threshold);
       sellPatterns.push({ 
         name: 'bearish_engulfing', 
         type: 'SELL', 
