@@ -702,6 +702,16 @@ function analyzeOpportunity(
         totalWeight += weight;
       }
       confidence = totalWeight > 0 ? weightedSum / totalWeight : 50;
+      
+      // Add modest confluence bonus for multiple Tier 1 patterns (ICT-style)
+      // +2% per additional Tier 1 pattern, capped at +6%
+      const tier1Patterns = patternsWithWinRates.filter(p => p.tier === 1);
+      if (tier1Patterns.length > 1) {
+        const confluenceBonus = Math.min((tier1Patterns.length - 1) * 2, 6);
+        confidence += confluenceBonus;
+        reasons.push(`🎯 Confluence: ${tier1Patterns.length} Tier 1 patterns (+${confluenceBonus}%)`);
+      }
+      
       reasons.push(`📊 Data-driven confidence from ${patternsWithWinRates.length} patterns`);
     } else {
       // Fallback: use base expected win rates if no DB stats
