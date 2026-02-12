@@ -63,3 +63,118 @@ export interface ForexData {
 }
 
 export type Timeframe = '1min' | '5min' | '15min' | '30min' | '1h' | '4h';
+
+// ============================================
+// ICT/SMC TYPES
+// ============================================
+
+export interface ICTConfig {
+  RRR_RATIO: number;
+  TARGET_WIN_RATE: number;
+  MAX_TRADES_PER_PAIR_PER_DAY: number;
+  MIN_CONFIDENCE_THRESHOLD: number;
+  POSITION_EXPIRY_HOURS: number;
+}
+
+export interface Killzone {
+  name: string;
+  start: { hour: number; minute: number };
+  end: { hour: number; minute: number };
+}
+
+export interface HTFBias {
+  direction: 'BUY' | 'SELL' | null;
+  hourlyTrend: 'ABOVE_200EMA' | 'BELOW_200EMA';
+  ema200: number;
+  confidence: number;
+  reasons: string[];
+}
+
+export interface LiquiditySweep {
+  detected: boolean;
+  type: 'BUY' | 'SELL';
+  sweepPrice: number;
+  sweepLow: number;
+  sweepHigh: number;
+  candleIndex: number;
+  liquidityLevel: number;
+}
+
+export interface FairValueGap {
+  detected: boolean;
+  type: 'BULLISH' | 'BEARISH';
+  topPrice: number;
+  bottomPrice: number;
+  equilibrium: number;
+  gapSizePips: number;
+  isValid: boolean;
+  age: number;
+}
+
+export interface MarketStructureShift {
+  detected: boolean;
+  direction: 'BULLISH' | 'BEARISH';
+  displacementIndex: number;
+}
+
+export interface ICTSignal {
+  valid: boolean;
+  direction: 'BUY' | 'SELL' | null;
+  entryPrice: number;
+  stopLoss: number;
+  takeProfit: number;
+  htfBias: HTFBias | null;
+  liquiditySweep: LiquiditySweep | null;
+  fvg: FairValueGap | null;
+  mss: MarketStructureShift | null;
+  confidence: number;
+  reasons: string[];
+  invalidReasons: string[];
+}
+
+// Performance Tracking Types
+export interface PerformanceMetrics {
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  profitFactor: number;
+  expectancy: number;
+  avgWin: number;
+  avgLoss: number;
+  maxDrawdown: number;
+  maxDrawdownPercent: number;
+  sharpeRatio: number;
+  zScore: number;
+  isStatisticallySignificant: boolean;
+  confidenceWarning: boolean;
+  performanceDegraded: boolean;
+}
+
+export interface SlippageReport {
+  symbol: string;
+  avgSlippagePips: number;
+  maxSlippagePips: number;
+  slippagePercent: number;
+  isPaused: boolean;
+  trades: number;
+}
+
+export interface AuditReport {
+  timestamp: string;
+  period: string;
+  metrics: PerformanceMetrics;
+  slippageBySymbol: SlippageReport[];
+  warnings: string[];
+  recommendations: string[];
+  isPaused: boolean;
+}
+
+export interface MonteCarloResult {
+  probabilityOfRuin: number;
+  drawdown95CI: { lower: number; upper: number };
+  finalEquity95CI: { lower: number; upper: number };
+  medianFinalEquity: number;
+  worstCaseEquity: number;
+  bestCaseEquity: number;
+}

@@ -16,6 +16,8 @@ import { OpportunitiesPanel } from '@/components/trading/OpportunitiesPanel';
 import { PredictionHistory } from '@/components/trading/PredictionHistory';
 import { LearningsPanel } from '@/components/trading/LearningsPanel';
 import { BacktestPanel } from '@/components/trading/BacktestPanel';
+import { PerformanceDashboard } from '@/components/trading/PerformanceDashboard';
+import { StressTestPanel } from '@/components/trading/StressTestPanel';
 import { UpgradeModal } from '@/components/dashboard/UpgradeModal';
 import { useForexData } from '@/hooks/useForexData';
 import { usePrediction } from '@/hooks/usePrediction';
@@ -263,6 +265,12 @@ const Dashboard = () => {
                 detectedPatterns={prediction?.patterns_detected as string[] | undefined}
               />
             </div>
+          </div>
+
+          {/* Performance Dashboard & Stress Test */}
+          <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <PerformanceDashboard />
+            <StressTestPanel />
           </div>
 
           {/* Prediction History, Learnings & Backtest */}
