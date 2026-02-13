@@ -1,0 +1,16 @@
+# SIGHT Trading Engine Dependencies
+
+# Core Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+pyarrow>=12.0.0
+
+# Technical Analysis (optional, for extended features)
+# ta-lib  # Requires system installation
+
+# Visualization (optional)
+# matplotlib>=3.7.0
+# plotly>=5.14.0
+
+# Utilities
+python-dateutil>=2.8.0
